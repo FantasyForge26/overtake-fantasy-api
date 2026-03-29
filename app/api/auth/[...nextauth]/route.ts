@@ -31,15 +31,11 @@ export const authOptions: NextAuthOptions = {
 
       await connectDB();
 
-      const existing = await User.findOne({ email: profile.email });
-      if (!existing) {
-        await User.create({
-          email: profile.email,
-          googleId: (profile as any).sub,
-          displayName: profile.name,
-          avatarUrl: (profile as any).picture,
-        });
-      }
+      await User.findOneAndUpdate(
+        { email: profile.email },
+        { $setOnInsert: { googleId: (profile as any).sub, displayName: profile.name, avatarUrl: (profile as any).picture } },
+        { upsert: true, new: true }
+      );
 
       return true;
     },
