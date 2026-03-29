@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
-import { League, Asset, DraftSession } from '@/lib/models';
+import { League, Asset, DraftSession, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 
 function buildSnakeDraftOrder(memberIds: string[], totalRounds: number): string[] {
@@ -71,6 +71,21 @@ export async function POST(req: NextRequest) {
 
   league.status = 'drafting';
   await league.save();
+
+  // Auto-create a roster for every member if one doesn't exist yet
+  const rosterDocs = memberIds.map((uid: string) => ({
+    leagueId: league._id,
+    userId:   uid,
+    season:   2026,
+    teamName: 'My Team',
+  }));
+  try {
+    await Roster.insertMany(rosterDocs, { ordered: false });
+  } catch (e: any) {
+    if (e.code !== 11000 && e?.writeErrors?.some((we: any) => we.code !== 11000)) {
+      throw e;
+    }
+  }
 
   return NextResponse.json(draftSession, { status: 201 });
 }
