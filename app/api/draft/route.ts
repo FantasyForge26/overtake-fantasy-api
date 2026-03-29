@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     totalPicks,
     availableAssetIds,
     picks: [],
-    pickTimeLimitSeconds: 60,
+    pickTimeLimitSeconds: 120,
     currentPickStartedAt: new Date(),
   });
 
