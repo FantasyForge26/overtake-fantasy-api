@@ -58,12 +58,10 @@ export async function POST(req: NextRequest) {
     pickedAt: new Date(),
   });
 
-  // Remove from available pool (power units can be shared — don't remove them)
-  if (assetType !== 'powerUnit') {
-    draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
-      (id: any) => id.toString() !== assetId,
-    );
-  }
+  // Remove from available pool
+  draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
+    (id: any) => id.toString() !== assetId,
+  );
 
   // Update the roster slot
   const roster = await Roster.findOne({ leagueId, userId });
