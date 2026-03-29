@@ -54,10 +54,7 @@ export const authOptions: NextAuthOptions = {
 
     async redirect({ url, baseUrl }) {
       if (url.startsWith('overtakefantasy://')) return url;
-      if (url.includes('/api/auth/mobile-callback')) return `${baseUrl}/api/auth/mobile-callback`;
-      if (url.startsWith(baseUrl)) return url;
-      if (url.startsWith('/')) return `${baseUrl}${url}`;
-      return baseUrl;
+      return `${baseUrl}/api/auth/mobile-callback`;
     },
 
     async session({ session, token }) {
