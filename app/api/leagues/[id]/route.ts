@@ -32,3 +32,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   return NextResponse.json(league);
 }
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const userId = (session.user as any).id as string;
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  await connectDB();
+
+  const league = await League.findById(id);
+  if (!league) {
+    return NextResponse.json({ error: 'League not found' }, { status: 404 });
+  }
+
+  if (league.commissionerId.toString() !== userId) {
+    return NextResponse.json({ error: 'Only the commissioner can update league settings' }, { status: 403 });
+  }
+
+  const { maxManagers, isPublic, draftMode, pickTimerSeconds, slowDraftPickHours, pauseStart, pauseEnd } = await req.json();
+
+  if (maxManagers !== undefined)       league.maxManagers = maxManagers;
+  if (isPublic !== undefined)          league.isPublic = isPublic;
+  if (draftMode !== undefined)         league.draftMode = draftMode;
+  if (pickTimerSeconds !== undefined)  league.pickTimerSeconds = pickTimerSeconds;
+  if (slowDraftPickHours !== undefined) league.slowDraftPickHours = slowDraftPickHours;
+  if (pauseStart !== undefined)        league.pauseStart = pauseStart;
+  if (pauseEnd !== undefined)          league.pauseEnd = pauseEnd;
+
+  await league.save();
+
+  return NextResponse.json(league);
+}
