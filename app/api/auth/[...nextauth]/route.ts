@@ -10,6 +10,9 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
+  pages: {
+    signIn: '/api/auth/signin',
+  },
   secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: 'jwt',
@@ -50,6 +53,12 @@ export const authOptions: NextAuthOptions = {
         }
       }
       return token;
+    },
+
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('overtakefantasy://')) return url;
+      if (url.startsWith(baseUrl)) return url;
+      return `${baseUrl}/api/auth/mobile-callback`;
     },
 
     async session({ session, token }) {
