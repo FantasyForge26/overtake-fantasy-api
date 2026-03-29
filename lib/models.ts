@@ -28,6 +28,14 @@ const AssetSchema = new Schema({
   isActive:           { type: Boolean, default: true },
   confirmed:          { type: Boolean, default: true },
   illustrationUrl:    { type: String },
+  otfRating:          { type: Number, default: 50 },
+  otfBaseRating:      { type: Number, default: 50 },
+  totalPoints:        { type: Number, default: 0 },
+  avgPointsPerRace:   { type: Number, default: 0 },
+  racesCompleted:     { type: Number, default: 0 },
+  dnfCount:           { type: Number, default: 0 },
+  age:                { type: Number },
+  teamStrength:       { type: Number, default: 50 },
 });
 
 AssetSchema.index({ assetType: 1, season: 1 });
