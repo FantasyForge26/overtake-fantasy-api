@@ -69,6 +69,8 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
+  console.log('[leagues GET] x-user-id header:', req.headers.get('x-user-id'));
+  console.log('[leagues GET] session:', JSON.stringify(session));
   if (!session?.user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
