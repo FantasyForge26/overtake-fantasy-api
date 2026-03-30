@@ -185,6 +185,7 @@ const DraftSessionSchema = new Schema({
   picks:                [DraftPickSchema],
   pickTimeLimitSeconds: { type: Number, default: 60 },
   currentPickStartedAt: { type: Date },
+  preDraftStartedAt:    { type: Date },
   createdAt:            { type: Date, default: Date.now },
   completedAt:          { type: Date },
 });
