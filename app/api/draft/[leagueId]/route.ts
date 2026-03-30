@@ -18,7 +18,7 @@ export async function GET(
 
   await connectDB();
 
-  const draftSession = await DraftSession.findOne({ leagueId, status: 'active' })
+  const draftSession = await DraftSession.findOne({ leagueId, status: { $in: ['active', 'pending'] } })
     .populate('availableAssetIds');
 
   if (!draftSession) {
