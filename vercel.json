@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/draft-start",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/auto-pick",
+      "schedule": "* * * * *"
     }
   ]
 }
