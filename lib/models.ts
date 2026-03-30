@@ -191,6 +191,19 @@ const DraftSessionSchema = new Schema({
 });
 
 // ---------------------------------------------------------------------------
+// DraftQueue
+// ---------------------------------------------------------------------------
+
+const DraftQueueSchema = new Schema({
+  leagueId:  { type: Schema.Types.ObjectId, ref: 'League', required: true },
+  userId:    { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  queue:     [{ type: Schema.Types.ObjectId, ref: 'Asset' }],
+  updatedAt: { type: Date, default: Date.now },
+});
+
+DraftQueueSchema.index({ leagueId: 1, userId: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -201,3 +214,4 @@ export const Roster         = mongoose.models.Roster         || mongoose.model('
 export const Contract       = mongoose.models.Contract       || mongoose.model('Contract',       ContractSchema);
 export const SeasonStanding = mongoose.models.SeasonStanding || mongoose.model('SeasonStanding', SeasonStandingSchema);
 export const DraftSession   = mongoose.models.DraftSession   || mongoose.model('DraftSession',   DraftSessionSchema);
+export const DraftQueue     = mongoose.models.DraftQueue     || mongoose.model('DraftQueue',     DraftQueueSchema);

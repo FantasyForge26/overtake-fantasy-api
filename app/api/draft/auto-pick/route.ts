@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
-import { Asset, DraftSession, League, Roster } from '@/lib/models';
+import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 
 // Returns the assetType the drafter needs to fill next, in priority order
@@ -51,12 +51,26 @@ export async function POST(req: NextRequest) {
 
   const assetType = neededAssetType(roster);
 
-  // Find highest-rated available asset of the needed type
   const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
-  const bestAsset = await Asset
-    .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
-    .sort({ otfRating: -1 })
-    .select('_id assetType');
+
+  // Check queue first — use the first queued asset that is available and matches the needed slot
+  const draftQueue = await DraftQueue.findOne({ leagueId, userId });
+  const queuedIds = draftQueue?.queue?.map((id: any) => id.toString()) ?? [];
+  const queuedPickId = queuedIds.find((qid: string) => availableIds.includes(qid));
+
+  let bestAsset: any = null;
+  if (queuedPickId) {
+    const queued = await Asset.findOne({ _id: queuedPickId, assetType, isActive: true }).select('_id assetType');
+    if (queued) bestAsset = queued;
+  }
+
+  // Fall back to highest OTF rating
+  if (!bestAsset) {
+    bestAsset = await Asset
+      .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
+      .sort({ otfRating: -1 })
+      .select('_id assetType');
+  }
 
   if (!bestAsset) {
     return NextResponse.json({ error: `No available ${assetType} asset found` }, { status: 400 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { Asset, DraftSession, League, Roster } from '@/lib/models';
+import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 
 function neededAssetType(roster: any): string {
   if (!roster.driver1AssetId)   return 'driver';
@@ -42,10 +42,25 @@ export async function GET(req: NextRequest) {
     const assetType = neededAssetType(roster);
 
     const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
-    const bestAsset = await Asset
-      .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
-      .sort({ otfRating: -1 })
-      .select('_id assetType');
+
+    // Check queue first
+    const draftQueue = await DraftQueue.findOne({ leagueId, userId });
+    const queuedIds = draftQueue?.queue?.map((id: any) => id.toString()) ?? [];
+    const queuedPickId = queuedIds.find((qid: string) => availableIds.includes(qid));
+
+    let bestAsset: any = null;
+    if (queuedPickId) {
+      const queued = await Asset.findOne({ _id: queuedPickId, assetType, isActive: true }).select('_id assetType');
+      if (queued) bestAsset = queued;
+    }
+
+    // Fall back to highest OTF rating
+    if (!bestAsset) {
+      bestAsset = await Asset
+        .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
+        .sort({ otfRating: -1 })
+        .select('_id assetType');
+    }
 
     if (!bestAsset) continue;
 
