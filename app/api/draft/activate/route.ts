@@ -22,6 +22,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No pending draft session found' }, { status: 404 });
   }
 
+  if (!draftSession.preDraftStartedAt) {
+    draftSession.preDraftStartedAt = new Date();
+    await draftSession.save();
+    return NextResponse.json({ error: 'Pre-draft countdown not complete', secondsRemaining: PRE_DRAFT_SECONDS }, { status: 400 });
+  }
+
   const elapsed = (Date.now() - new Date(draftSession.preDraftStartedAt).getTime()) / 1000;
   if (elapsed < PRE_DRAFT_SECONDS) {
     const secondsRemaining = Math.ceil(PRE_DRAFT_SECONDS - elapsed);
