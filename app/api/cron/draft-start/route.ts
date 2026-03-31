@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     }
     const elapsed = (Date.now() - new Date(session.preDraftStartedAt).getTime()) / 1000;
     console.log('[cron] session elapsed seconds:', elapsed, 'threshold: 10');
-    if (elapsed >= 10) {
+    if (elapsed >= 180) {
       console.log('[cron] activating session:', session._id);
       session.status = 'active';
       session.currentPickStartedAt = new Date();
