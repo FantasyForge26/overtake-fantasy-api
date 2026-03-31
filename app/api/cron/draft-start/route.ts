@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
   for (const session of pendingSessions) {
     if (!session.preDraftStartedAt) continue;
     const elapsed = (Date.now() - new Date(session.preDraftStartedAt).getTime()) / 1000;
-    if (elapsed >= 180) {
+    if (elapsed >= 10) {
       session.status = 'active';
       session.currentPickStartedAt = new Date();
       await session.save();
