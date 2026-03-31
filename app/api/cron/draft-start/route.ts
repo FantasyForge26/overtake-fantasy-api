@@ -78,5 +78,18 @@ export async function GET(req: NextRequest) {
     started.push(league._id.toString());
   }
 
+  // Also activate any pending drafts whose pre-draft window has passed
+  const pendingSessions = await DraftSession.find({ status: 'pending' });
+  for (const session of pendingSessions) {
+    if (!session.preDraftStartedAt) continue;
+    const elapsed = (Date.now() - new Date(session.preDraftStartedAt).getTime()) / 1000;
+    if (elapsed >= 180) {
+      session.status = 'active';
+      session.currentPickStartedAt = new Date();
+      await session.save();
+      started.push(`activated:${session.leagueId}`);
+    }
+  }
+
   return NextResponse.json({ started });
 }
