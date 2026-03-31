@@ -20,7 +20,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  await connectDB();
+  try {
+    await connectDB();
+  } catch (e: any) {
+    console.error('[cron] DB connection failed:', e.message);
+    return NextResponse.json({ error: 'DB connection failed', message: e.message }, { status: 500 });
+  }
 
   const now = new Date();
   const leagues = await League.find({
