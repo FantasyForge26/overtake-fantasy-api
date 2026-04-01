@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { League, Asset, DraftSession, Roster } from '@/lib/models';
+import { League, Asset, DraftSession, Roster, User } from '@/lib/models';
 
 function buildSnakeDraftOrder(memberIds: string[], totalRounds: number): string[] {
   const order: string[] = [];
@@ -58,6 +58,20 @@ export async function GET(req: NextRequest) {
   const availableAssetIds = assets.map((a: any) => a._id);
 
   for (const league of leagues) {
+    // Fill empty slots with CPU teams
+    const missingCount = league.maxManagers - league.memberIds.length;
+    for (let i = 0; i < missingCount; i++) {
+      const cpuUser = await User.create({
+        displayName: `CPU Team ${i + 1}`,
+        email: `cpu${league._id}${i}@overtake.ai`,
+        isAI: true,
+      });
+      league.memberIds.push(cpuUser._id);
+    }
+    if (missingCount > 0) {
+      await league.save();
+    }
+
     const memberIds = league.memberIds.map((id: any) => id.toString());
     const totalRounds = 6;
     const draftOrder = buildSnakeDraftOrder(memberIds, totalRounds);

@@ -54,6 +54,7 @@ const UserSchema = new Schema({
   createdAt:   { type: Date, default: Date.now },
   lastLogin:   { type: Date, default: Date.now },
   leagueIds:   [{ type: Schema.Types.ObjectId, ref: 'League' }],
+  isAI:        { type: Boolean, default: false },
 });
 
 // ---------------------------------------------------------------------------
