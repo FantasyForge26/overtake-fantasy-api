@@ -73,9 +73,21 @@ export async function GET(req: NextRequest) {
     }
 
     const memberIds = league.memberIds.map((id: any) => id.toString());
+
+    // Randomize draft order if needed
+    if (!league.draftOrderMode || league.draftOrderMode === 'random') {
+      for (let i = memberIds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [memberIds[i], memberIds[j]] = [memberIds[j], memberIds[i]];
+      }
+    }
+
     const totalRounds = 6;
     const draftOrder = buildSnakeDraftOrder(memberIds, totalRounds);
     const totalPicks = draftOrder.length;
+
+    // Save round 1 order to league for pre-draft display
+    league.draftOrderIds = memberIds;
 
     await DraftSession.create({
       leagueId: league._id,

@@ -80,6 +80,8 @@ const LeagueSchema = new Schema({
     principalFirstBonus:  { type: Number, default: 25 },
   },
   draftDateTime:    { type: Date },
+  draftOrderMode:   { type: String, enum: ['random', 'manual'], default: 'random' },
+  draftOrderIds:    [{ type: Schema.Types.ObjectId, ref: 'User' }],
   draftMode:        { type: String, enum: ['fast', 'slow'], default: 'fast' },
   slowDraftPickHours: { type: Number, default: 24 },
   pauseStart:       { type: String, default: '00:00' },
