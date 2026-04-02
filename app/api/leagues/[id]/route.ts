@@ -57,15 +57,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Only the commissioner can update league settings' }, { status: 403 });
   }
 
-  const { maxManagers, isPublic, draftMode, pickTimerSeconds, slowDraftPickHours, pauseStart, pauseEnd } = await req.json();
+  const { maxManagers, isPublic, draftMode, pickTimeLimitSeconds, slowDraftPickHours, pauseStart, pauseEnd } = await req.json();
 
-  if (maxManagers !== undefined)       league.maxManagers = maxManagers;
-  if (isPublic !== undefined)          league.isPublic = isPublic;
-  if (draftMode !== undefined)         league.draftMode = draftMode;
-  if (pickTimerSeconds !== undefined)  league.pickTimerSeconds = pickTimerSeconds;
-  if (slowDraftPickHours !== undefined) league.slowDraftPickHours = slowDraftPickHours;
-  if (pauseStart !== undefined)        league.pauseStart = pauseStart;
-  if (pauseEnd !== undefined)          league.pauseEnd = pauseEnd;
+  if (maxManagers !== undefined)          league.maxManagers = maxManagers;
+  if (isPublic !== undefined)             league.isPublic = isPublic;
+  if (draftMode !== undefined)            league.draftMode = draftMode;
+  if (pickTimeLimitSeconds !== undefined) league.pickTimeLimitSeconds = pickTimeLimitSeconds;
+  if (slowDraftPickHours !== undefined)   league.slowDraftPickHours = slowDraftPickHours;
+  if (pauseStart !== undefined)           league.pauseStart = pauseStart;
+  if (pauseEnd !== undefined)             league.pauseEnd = pauseEnd;
 
   await league.save();
 

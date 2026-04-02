@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     totalPicks,
     availableAssetIds,
     picks: [],
-    pickTimeLimitSeconds: 120,
+    pickTimeLimitSeconds: league.pickTimeLimitSeconds || 60,
     preDraftStartedAt: new Date(),
   });
 
