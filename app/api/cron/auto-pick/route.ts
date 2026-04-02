@@ -105,6 +105,12 @@ export async function GET(req: NextRequest) {
     roster.updatedAt = new Date();
     await roster.save();
 
+    // Mark user as auto-draft
+    if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
+    if (!draftSession.autoDraftUserIds.includes(userId)) {
+      draftSession.autoDraftUserIds.push(userId);
+    }
+
     // Advance pick index
     const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
     draftSession.currentPickIndex += 1;

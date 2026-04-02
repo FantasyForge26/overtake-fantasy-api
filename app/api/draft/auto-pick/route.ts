@@ -116,6 +116,12 @@ export async function POST(req: NextRequest) {
 
   // Advance pick index
   const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
+  // Mark user as auto-draft
+  if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
+  if (!draftSession.autoDraftUserIds.includes(userId)) {
+    draftSession.autoDraftUserIds.push(userId);
+  }
+
   draftSession.currentPickIndex += 1;
   draftSession.currentRound = Math.floor(draftSession.currentPickIndex / memberCount) + 1;
   draftSession.currentPickStartedAt = new Date();

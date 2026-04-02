@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
       totalPicks,
       availableAssetIds,
       picks: [],
-      pickTimeLimitSeconds: 120,
+      pickTimeLimitSeconds: league.pickTimeLimitSeconds || 60,
       preDraftStartedAt: new Date(),
     });
 
