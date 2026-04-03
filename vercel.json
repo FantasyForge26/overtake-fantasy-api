@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/auto-pick?secret=overtake2026secret",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/draft-start?secret=overtake2026secret",
-      "schedule": "* * * * *"
-    }
-  ]
-}
+{}
