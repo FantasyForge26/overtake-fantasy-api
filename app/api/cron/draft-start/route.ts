@@ -89,10 +89,6 @@ export async function GET(req: NextRequest) {
     // Save round 1 order to league for pre-draft display
     league.draftOrderIds = memberIds;
 
-    // All CPU users start in auto-draft immediately
-    const cpuUserIds = await User.find({ _id: { $in: memberIds }, isAI: true }).select('_id');
-    const autoDraftUserIds = cpuUserIds.map((u: any) => u._id.toString());
-
     await DraftSession.create({
       leagueId: league._id,
       season: 2026,
@@ -106,7 +102,7 @@ export async function GET(req: NextRequest) {
       picks: [],
       pickTimeLimitSeconds: league.pickTimeLimitSeconds || 60,
       preDraftStartedAt: new Date(),
-      autoDraftUserIds,
+      autoDraftUserIds: [],
     });
 
     league.status = 'drafting';
