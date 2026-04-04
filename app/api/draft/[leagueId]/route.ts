@@ -56,6 +56,6 @@ export async function GET(
     currentRound: draftSession.currentRound,
     picks: populatedPicks,
     managers: managerUsers,
-    autoDraftUserIds: draftSession.autoDraftUserIds ?? [],
+    autoDraftUserIds: (draftSession.autoDraftUserIds ?? []).map((id: any) => id.toString()),
   });
 }
