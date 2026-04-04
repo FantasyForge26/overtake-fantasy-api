@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
     if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
     if (!draftSession.autoDraftUserIds.includes(userId)) {
       draftSession.autoDraftUserIds.push(userId);
+      draftSession.markModified('autoDraftUserIds');
     }
 
     // Record the pick
@@ -89,6 +90,7 @@ export async function GET(req: NextRequest) {
     draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
       (id: any) => id.toString() !== assetId,
     );
+    draftSession.markModified('availableAssetIds');
 
     // Update roster slot
     if (assetType === 'driver') {
