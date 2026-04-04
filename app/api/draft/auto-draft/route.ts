@@ -8,8 +8,10 @@ export async function POST(req: NextRequest) {
     const session = await getMobileSession(req);
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const userId = session.user.id;
-    const { leagueId, enabled } = await req.json();
+    const { leagueId, enabled, targetUserId } = await req.json();
+
+    // Use targetUserId if provided (for marking CPU users), otherwise use the caller's id
+    const userId = targetUserId ?? session.user.id;
 
     await connectDB();
 
