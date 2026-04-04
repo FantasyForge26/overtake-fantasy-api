@@ -15,35 +15,35 @@ export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
   const querySecret = req.nextUrl.searchParams.get('secret');
   const secret = process.env.CRON_SECRET;
-
   if (authHeader !== `Bearer ${secret}` && querySecret !== secret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   await connectDB();
-
   const activeSessions = await DraftSession.find({ status: 'active' });
-
   const now = Date.now();
   let processed = 0;
 
   for (const draftSession of activeSessions) {
-    const expiresAt =
-      new Date(draftSession.currentPickStartedAt).getTime() +
-      draftSession.pickTimeLimitSeconds * 1000;
-
-    if (now < expiresAt) continue;
-
     const userId = draftSession.draftOrder[draftSession.currentPickIndex]?.toString();
     if (!userId) continue;
 
-    const leagueId = draftSession.leagueId.toString();
+    const isAutoDraft = draftSession.autoDraftUserIds?.includes(userId) ?? false;
 
+    // If user is in auto-draft, force pick immediately (treat as expired 4s ago)
+    // Otherwise check if timer has expired normally
+    if (!isAutoDraft) {
+      const expiresAt =
+        new Date(draftSession.currentPickStartedAt).getTime() +
+        draftSession.pickTimeLimitSeconds * 1000;
+      if (now < expiresAt) continue;
+    }
+
+    const leagueId = draftSession.leagueId.toString();
     const roster = await Roster.findOne({ leagueId, userId });
     if (!roster) continue;
 
     const assetType = neededAssetType(roster);
-
     const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
 
     // Check queue first
@@ -68,6 +68,12 @@ export async function GET(req: NextRequest) {
     if (!bestAsset) continue;
 
     const assetId = bestAsset._id.toString();
+
+    // Mark user as auto-draft BEFORE saving so clients see it immediately
+    if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
+    if (!draftSession.autoDraftUserIds.includes(userId)) {
+      draftSession.autoDraftUserIds.push(userId);
+    }
 
     // Record the pick
     draftSession.picks.push({
@@ -102,14 +108,9 @@ export async function GET(req: NextRequest) {
     } else if (assetType === 'powerUnit') {
       roster.powerUnitAssetId = bestAsset._id;
     }
+
     roster.updatedAt = new Date();
     await roster.save();
-
-    // Mark user as auto-draft
-    if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
-    if (!draftSession.autoDraftUserIds.includes(userId)) {
-      draftSession.autoDraftUserIds.push(userId);
-    }
 
     // Advance pick index
     const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
@@ -121,7 +122,6 @@ export async function GET(req: NextRequest) {
     if (draftSession.currentPickIndex >= draftSession.totalPicks) {
       draftSession.status = 'completed';
       draftSession.completedAt = new Date();
-
       const league = await League.findById(leagueId);
       if (league) {
         league.status = 'active';
