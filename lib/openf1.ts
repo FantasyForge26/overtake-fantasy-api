@@ -16,7 +16,7 @@ interface OF1Meeting {
   year: number;
 }
 
-interface OF1Session {
+export interface OF1Session {
   session_key: number;
   session_type: string;
   session_name: string;
@@ -71,14 +71,15 @@ async function apiFetch<T>(path: string, params: Record<string, string | number>
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the session_key for a given year / round / session type.
- * Meetings are sorted ascending by date_start; `round` is 1-indexed.
+ * Returns the session object for a given year / round / session type.
+ * Testing meetings are excluded; remaining meetings are sorted ascending
+ * by date_start and `round` is used as a 1-based index.
  */
 export async function getSession(
   year: number,
   sessionType: 'Race' | 'Qualifying' | 'Sprint',
   round: number,
-): Promise<number> {
+): Promise<OF1Session> {
   const meetings = await apiFetch<OF1Meeting>('/meetings', { year });
 
   const sorted = meetings
@@ -96,7 +97,7 @@ export async function getSession(
     throw new Error(`No ${sessionType} session for ${year} round ${round} (meeting_key=${meeting.meeting_key})`);
   }
 
-  return sessions[0].session_key;
+  return sessions[0];
 }
 
 /**

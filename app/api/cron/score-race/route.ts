@@ -71,6 +71,8 @@ export async function GET(req: NextRequest) {
   const round = parseInt(req.nextUrl.searchParams.get('round') ?? '0', 10);
   if (!round) return NextResponse.json({ error: 'round is required' }, { status: 400 });
 
+  try {
+
   await connectDB();
 
   const calEntry = await RaceCalendar.findOne({ season: 2026, round });
@@ -82,16 +84,16 @@ export async function GET(req: NextRequest) {
   // Fetch from OpenF1 — race & qualifying session keys in parallel, then data
   // ---------------------------------------------------------------------------
 
-  const [raceSessionKey, qualSessionKey] = await Promise.all([
+  const [raceSession, qualSession] = await Promise.all([
     getSession(2026, 'Race', round),
     getSession(2026, 'Qualifying', round),
   ]);
 
   const [raceResults, qualResults, pitStops, gridPositions] = await Promise.all([
-    getRaceResults(raceSessionKey),
-    getQualifyingResults(qualSessionKey),
-    getPitStopData(raceSessionKey),
-    getGridPositions(raceSessionKey),
+    getRaceResults(raceSession.session_key),
+    getQualifyingResults(qualSession.session_key),
+    getPitStopData(raceSession.session_key),
+    getGridPositions(raceSession.session_key),
   ]);
 
   // ---------------------------------------------------------------------------
@@ -433,5 +435,11 @@ export async function GET(req: NextRequest) {
     await pitCrew.save();
   }
 
-  return NextResponse.json({ success: true, round, scoresCalculated });
+    return NextResponse.json({ success: true, round, scoresCalculated });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err.message, stack: err.stack?.split('\n').slice(0, 5) },
+      { status: 500 },
+    );
+  }
 }
