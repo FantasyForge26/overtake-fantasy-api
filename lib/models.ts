@@ -220,11 +220,45 @@ DraftQueueSchema.index({ leagueId: 1, userId: 1 }, { unique: true });
 const TransactionSchema = new Schema({
   leagueId:    { type: Schema.Types.ObjectId, ref: 'League', required: true },
   userId:      { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type:        { type: String, enum: ['add', 'drop'], required: true },
+  type:        { type: String, enum: ['add', 'drop', 'draft', 'trade', 'race'], required: true },
   addAssetId:  { type: Schema.Types.ObjectId, ref: 'Asset' },
   dropAssetId: { type: Schema.Types.ObjectId, ref: 'Asset' },
   createdAt:   { type: Date, default: Date.now },
 });
+
+// ---------------------------------------------------------------------------
+// RaceResult
+// ---------------------------------------------------------------------------
+
+const DriverResultSchema = new Schema({
+  driverSlug:         { type: String, required: true },
+  startPosition:      { type: Number },
+  finishPosition:     { type: Number },
+  fastestLap:         { type: Boolean, default: false },
+  speedTrapViolation: { type: Boolean, default: false },
+  notClassified:      { type: Boolean, default: false },
+  dnf:                { type: Boolean, default: false },
+  penalizedSeconds:   { type: Number, default: 0 },
+}, { _id: false });
+
+const PitCrewResultSchema = new Schema({
+  pitCrewSlug:       { type: String, required: true },
+  stopTimes:         [{ type: Number }],
+  fastestStopOverall: { type: Boolean, default: false },
+}, { _id: false });
+
+const RaceResultSchema = new Schema({
+  leagueId:      { type: Schema.Types.ObjectId, ref: 'League', required: true },
+  season:        { type: Number, default: 2026 },
+  round:         { type: Number, required: true },
+  driverResults: [DriverResultSchema],
+  pitCrewResults:[PitCrewResultSchema],
+  enteredBy:     { type: String },
+  enteredAt:     { type: Date },
+  calculated:    { type: Boolean, default: false },
+});
+
+RaceResultSchema.index({ leagueId: 1, season: 1, round: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
 // PerformanceSelection
@@ -281,6 +315,7 @@ export const Contract       = mongoose.models.Contract       || mongoose.model('
 export const SeasonStanding = mongoose.models.SeasonStanding || mongoose.model('SeasonStanding', SeasonStandingSchema);
 export const DraftSession   = mongoose.models.DraftSession   || mongoose.model('DraftSession',   DraftSessionSchema);
 export const DraftQueue     = mongoose.models.DraftQueue     || mongoose.model('DraftQueue',     DraftQueueSchema);
+export const RaceResult            = mongoose.models.RaceResult            || mongoose.model('RaceResult',            RaceResultSchema);
 export const Transaction           = mongoose.models.Transaction           || mongoose.model('Transaction',           TransactionSchema);
 export const PerformanceSelection  = mongoose.models.PerformanceSelection  || mongoose.model('PerformanceSelection',  PerformanceSelectionSchema);
 export const RaceCalendar          = mongoose.models.RaceCalendar          || mongoose.model('RaceCalendar',          RaceCalendarSchema);
