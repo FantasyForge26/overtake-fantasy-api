@@ -79,6 +79,8 @@ const LeagueSchema = new Schema({
     powerUnitFirstBonus:  { type: Number, default: 25 },
     principalFirstBonus:  { type: Number, default: 25 },
   },
+  waiversClearDay:  { type: String, enum: ['none', 'tue', 'wed', 'thu'], default: 'wed' },
+  waiverHoldDays:   { type: Number, default: 2 },
   freeAgencyType:   { type: String, enum: ['freeForAll', 'contracts'], default: 'freeForAll' },
   acquisitionType:  { type: String, enum: ['instant', 'waivers'], default: 'instant' },
   ccStartingBalance: { type: Number, default: 100 },
