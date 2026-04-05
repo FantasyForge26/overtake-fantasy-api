@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { connectDB } from './db';
 import { Asset } from './models';
-import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore } from './otf-calculator';
+import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore, calculatePrincipalScore } from './otf-calculator';
 
 // ---------------------------------------------------------------------------
 // Driver historical stats — Rounds 1–3 (Australia, China, Japan)
@@ -521,6 +521,87 @@ async function seedHistoricalResults() {
 
     await asset.save();
     console.log(`  ✓ ${pu.slug}: r1=${r1pts} r2=${r2pts} r3=${r3pts} total=${totalPoints}, OTF ${asset.otfRating}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Principals — sum of both drivers' FINISH_POINTS per race
+  // DNF/DNS treated as P20 (FINISH_POINTS[20] = 1.25).
+  // ---------------------------------------------------------------------------
+  console.log('\nUpdating principal historical stats...');
+
+  // [slug, r1d1, r1d2, r2d1, r2d2, r3d1, r3d2]
+  // Each pair is the two drivers' finish positions for that principal's team.
+  const principalStats: {
+    slug: string;
+    r1: [number, number];
+    r2: [number, number];
+    r3: [number, number];
+  }[] = [
+    // Toto Wolff — Mercedes: Russell + Antonelli
+    // R1: P1+P2  R2: P1+P2 (Antonelli, Russell)  R3: P4+P1 (Russell, Antonelli)
+    { slug: 'toto-wolff',          r1: [1,  2], r2: [1,  2], r3: [4,  1] },
+    // Fred Vasseur — Ferrari: Leclerc + Hamilton
+    // R1: P3+P4  R2: P3+P4 (Hamilton, Leclerc)   R3: P3+P6
+    { slug: 'fred-vasseur',        r1: [3,  4], r2: [3,  4], r3: [3,  6] },
+    // Andrea Stella — McLaren: Norris + Piastri
+    // R1: P5+P20(DNS)  R2: P20+P20(both DNS)   R3: P5+P2
+    { slug: 'andrea-stella',       r1: [5, 20], r2: [20, 20], r3: [5,  2] },
+    // Laurent Mekies — Red Bull: Verstappen + Hadjar
+    // R1: P6+P20(DNF)  R2: P20(DNF)+P8   R3: P8+P12
+    { slug: 'laurent-mekies',      r1: [6, 20], r2: [20, 8], r3: [8, 12] },
+    // Ayao Komatsu — Haas: Bearman + Ocon
+    // R1: P7+P11  R2: P5+P14   R3: P20(DNF)+P10
+    { slug: 'ayao-komatsu',        r1: [7, 11], r2: [5, 14], r3: [20, 10] },
+    // Alan Permane — Racing Bulls: Lawson + Lindblad
+    // R1: P13+P8  R2: P7+P12   R3: P9+P14
+    { slug: 'alan-permane',        r1: [13, 8], r2: [7, 12], r3: [9, 14] },
+    // Jonathan Wheatley — Audi: Hulkenberg + Bortoleto
+    // R1: P20(DNS)+P9  R2: P11+P20(DNS)  R3: P11+P13
+    { slug: 'jonathan-wheatley',   r1: [20, 9], r2: [11, 20], r3: [11, 13] },
+    // Flavio Briatore — Alpine: Gasly + Colapinto
+    // R1: P10+P14  R2: P6+P10   R3: P7+P16
+    { slug: 'flavio-briatore',     r1: [10, 14], r2: [6, 10], r3: [7, 16] },
+    // James Vowles — Williams: Sainz + Albon
+    // R1: P15+P12  R2: P9+P20(DNS)  R3: P15+P20
+    { slug: 'james-vowles',        r1: [15, 12], r2: [9, 20], r3: [15, 20] },
+    // Graeme Lowdon — Cadillac: Perez + Bottas
+    // R1: P16+P20(DNF)  R2: P15+P13   R3: P17+P19
+    { slug: 'graeme-lowdon',       r1: [16, 20], r2: [15, 13], r3: [17, 19] },
+    // Adrian Newey — Aston Martin: Alonso + Stroll
+    // R1: P20(DNF)+P20(DNF)  R2: P20(DNF)+P20(DNF)  R3: P18+P20(DNF)
+    { slug: 'adrian-newey',        r1: [20, 20], r2: [20, 20], r3: [18, 20] },
+  ];
+
+  for (const ps of principalStats) {
+    const r1pts = calculatePrincipalScore(ps.r1[0], ps.r1[1]);
+    const r2pts = calculatePrincipalScore(ps.r2[0], ps.r2[1]);
+    const r3pts = calculatePrincipalScore(ps.r3[0], ps.r3[1]);
+    const totalPoints      = Math.round((r1pts + r2pts + r3pts) * 100) / 100;
+    const racesCompleted   = 3;
+    const avgPointsPerRace = Math.round((totalPoints / racesCompleted) * 100) / 100;
+
+    const asset = await Asset.findOne({ slug: ps.slug, assetType: 'principal', season: 2026 });
+    if (!asset) {
+      console.warn(`  ⚠ Principal not found: ${ps.slug}`);
+      continue;
+    }
+
+    asset.totalPoints      = totalPoints;
+    asset.avgPointsPerRace = avgPointsPerRace;
+    asset.racesCompleted   = racesCompleted;
+    asset.dnfCount         = 0;
+    asset.otfRating        = calculateOTFRating({
+      otfBaseRating:    asset.otfBaseRating,
+      racesCompleted:   asset.racesCompleted,
+      avgPointsPerRace: asset.avgPointsPerRace,
+      totalPoints:      asset.totalPoints,
+      age:              asset.age,
+      teamStrength:     asset.teamStrength,
+      dnfCount:         0,
+    });
+
+    await asset.save();
+    console.log(`  ✓ ${ps.slug}: r1=${r1pts} r2=${r2pts} r3=${r3pts} total=${totalPoints}, OTF ${asset.otfRating}`);
   }
 
   // ---------------------------------------------------------------------------
