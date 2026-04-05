@@ -158,8 +158,8 @@ const driverStats: DriverHistoricalStats[] = [
 // ---------------------------------------------------------------------------
 
 interface PitRaceData {
-  stopTimes: number[];
-  fastestStopOverall: boolean;
+  fastestStopRank: number;
+  avgTimeRank: number;
 }
 
 interface PitCrewHistoricalStats {
@@ -169,149 +169,210 @@ interface PitCrewHistoricalStats {
   r3: PitRaceData | null;
 }
 
+// Rankings computed per-race across all cars with recorded stops.
+// fastestStopRank: rank by single best stop time (1 = fastest).
+// avgTimeRank:     rank by average of all stop times (1 = lowest avg).
+// null = DNS or no stop data recorded that race.
 const pitCrewStats: PitCrewHistoricalStats[] = [
   // Mercedes
   {
     slug: 'mercedes-pit-crew-63', // Russell
-    r1: { stopTimes: [2.17, 2.49], fastestStopOverall: true },
-    r2: { stopTimes: [3.25],       fastestStopOverall: false },
-    r3: { stopTimes: [2.43],       fastestStopOverall: false },
+    //   R1: fastest 2.17 (#1 of 18), avg 2.330 (#2 of 18)
+    //   R2: fastest 3.25 (#11 of 17), avg 3.250 (#10 of 17)
+    //   R3: fastest 2.43 (#5 of 22), avg 2.430 (#3 of 22)
+    r1: { fastestStopRank:  1, avgTimeRank:  2 },
+    r2: { fastestStopRank: 11, avgTimeRank: 10 },
+    r3: { fastestStopRank:  5, avgTimeRank:  3 },
   },
   {
     slug: 'mercedes-pit-crew-12', // Antonelli (R1 stop data unavailable)
+    //   R2: fastest 2.87 (#8 of 17), avg 2.870 (#7 of 17)
+    //   R3: fastest 2.40 (#3 of 22), avg 2.400 (#1 of 22)
     r1: null,
-    r2: { stopTimes: [2.87], fastestStopOverall: false },
-    r3: { stopTimes: [2.40], fastestStopOverall: false },
+    r2: { fastestStopRank:  8, avgTimeRank:  7 },
+    r3: { fastestStopRank:  3, avgTimeRank:  1 },
   },
   // Ferrari
   {
     slug: 'ferrari-pit-crew-16', // Leclerc
-    r1: { stopTimes: [2.22, 3.40], fastestStopOverall: false },
-    r2: { stopTimes: [3.40],       fastestStopOverall: false },
-    r3: { stopTimes: [2.13, 2.95], fastestStopOverall: false },
+    //   R1: fastest 2.22 (#2 of 18), avg 2.810 (#6 of 18)
+    //   R2: fastest 3.40 (#13 of 17), avg 3.400 (#12 of 17)
+    //   R3: fastest 2.13 (#2 of 22), avg 2.540 (#6 of 22)
+    r1: { fastestStopRank:  2, avgTimeRank:  6 },
+    r2: { fastestStopRank: 13, avgTimeRank: 12 },
+    r3: { fastestStopRank:  2, avgTimeRank:  6 },
   },
   {
     slug: 'ferrari-pit-crew-44', // Hamilton
-    r1: { stopTimes: [2.26, 2.96], fastestStopOverall: false },
-    r2: { stopTimes: [2.29],       fastestStopOverall: true  },
-    r3: { stopTimes: [2.00, 2.95], fastestStopOverall: true  },
+    //   R1: fastest 2.26 (#4 of 18), avg 2.610 (#3 of 18)
+    //   R2: fastest 2.29 (#1 of 17), avg 2.290 (#1 of 17)
+    //   R3: fastest 2.00 (#1 of 22), avg 2.475 (#4 of 22)
+    r1: { fastestStopRank:  4, avgTimeRank:  3 },
+    r2: { fastestStopRank:  1, avgTimeRank:  1 },
+    r3: { fastestStopRank:  1, avgTimeRank:  4 },
   },
   // Red Bull
   {
     slug: 'red-bull-pit-crew-3', // Verstappen
-    r1: { stopTimes: [2.24, 2.40], fastestStopOverall: false },
-    r2: { stopTimes: [3.32],       fastestStopOverall: false },
-    r3: { stopTimes: [3.36],       fastestStopOverall: false },
+    //   R1: fastest 2.24 (#3 of 18), avg 2.320 (#1 of 18)
+    //   R2: fastest 3.32 (#12 of 17), avg 3.320 (#11 of 17)
+    //   R3: fastest 3.36 (#16 of 22), avg 3.360 (#14 of 22)
+    r1: { fastestStopRank:  3, avgTimeRank:  1 },
+    r2: { fastestStopRank: 12, avgTimeRank: 11 },
+    r3: { fastestStopRank: 16, avgTimeRank: 14 },
   },
   {
     slug: 'red-bull-pit-crew-6', // Hadjar (R1 DNF — no stops recorded)
+    //   R2: fastest 2.58 (#4 of 17), avg 4.110 (#13 of 17)
+    //   R3: fastest 2.80 (#12 of 22), avg 2.800 (#10 of 22)
     r1: null,
-    r2: { stopTimes: [2.58, 5.64], fastestStopOverall: false },
-    r3: { stopTimes: [2.80],       fastestStopOverall: false },
+    r2: { fastestStopRank:  4, avgTimeRank: 13 },
+    r3: { fastestStopRank: 12, avgTimeRank: 10 },
   },
   // Racing Bulls
   {
     slug: 'racing-bulls-pit-crew-30', // Lawson
-    r1: { stopTimes: [2.59, 3.11], fastestStopOverall: false },
-    r2: { stopTimes: [2.34],       fastestStopOverall: false },
-    r3: { stopTimes: [2.79],       fastestStopOverall: false },
+    //   R1: fastest 2.59 (#7 of 18), avg 2.850 (#8 of 18)
+    //   R2: fastest 2.34 (#2 of 17), avg 2.340 (#2 of 17)
+    //   R3: fastest 2.79 (#11 of 22), avg 2.790 (#9 of 22)
+    r1: { fastestStopRank:  7, avgTimeRank:  8 },
+    r2: { fastestStopRank:  2, avgTimeRank:  2 },
+    r3: { fastestStopRank: 11, avgTimeRank:  9 },
   },
   {
     slug: 'racing-bulls-pit-crew-41', // Lindblad
-    r1: { stopTimes: [2.42, 3.26], fastestStopOverall: false },
-    r2: { stopTimes: [2.86],       fastestStopOverall: false },
-    r3: { stopTimes: [4.78],       fastestStopOverall: false },
+    //   R1: fastest 2.42 (#5 of 18), avg 2.840 (#7 of 18)
+    //   R2: fastest 2.86 (#7 of 17, tie broken alpha), avg 2.860 (#6 of 17)
+    //   R3: fastest 4.78 (#21 of 22), avg 4.780 (#21 of 22)
+    r1: { fastestStopRank:  5, avgTimeRank:  7 },
+    r2: { fastestStopRank:  7, avgTimeRank:  6 },
+    r3: { fastestStopRank: 21, avgTimeRank: 21 },
   },
   // McLaren
   {
     slug: 'mclaren-pit-crew-1', // Norris (R2 DNS)
-    r1: { stopTimes: [2.52, 2.98], fastestStopOverall: false },
+    //   R1: fastest 2.52 (#6 of 18), avg 2.750 (#5 of 18)
+    //   R3: fastest 2.59 (#8 of 22), avg 2.590 (#7 of 22)
+    r1: { fastestStopRank:  6, avgTimeRank:  5 },
     r2: null,
-    r3: { stopTimes: [2.59], fastestStopOverall: false },
+    r3: { fastestStopRank:  8, avgTimeRank:  7 },
   },
   {
     slug: 'mclaren-pit-crew-81', // Piastri (R1 DNS, R2 DNS)
+    //   R3: fastest 2.49 (#7 of 22), avg 2.490 (#5 of 22)
     r1: null,
     r2: null,
-    r3: { stopTimes: [2.49], fastestStopOverall: false },
+    r3: { fastestStopRank:  7, avgTimeRank:  5 },
   },
   // Williams
   {
     slug: 'williams-pit-crew-23', // Albon (R2 DNS)
-    r1: { stopTimes: [2.63, 2.74],       fastestStopOverall: false },
+    //   R1: fastest 2.63 (#8 of 18), avg 2.685 (#4 of 18)
+    //   R3: fastest 2.47 (#6 of 22), avg 2.917 (#11 of 22)
+    r1: { fastestStopRank:  8, avgTimeRank:  4 },
     r2: null,
-    r3: { stopTimes: [2.47, 2.90, 3.38], fastestStopOverall: false },
+    r3: { fastestStopRank:  6, avgTimeRank: 11 },
   },
   {
     slug: 'williams-pit-crew-55', // Sainz
-    r1: { stopTimes: [4.14, 8.07, 19.14], fastestStopOverall: false },
-    r2: { stopTimes: [2.89],              fastestStopOverall: false },
-    r3: { stopTimes: [3.34],              fastestStopOverall: false },
+    //   R1: fastest 4.14 (#15 of 18), avg 10.450 (#16 of 18)
+    //   R2: fastest 2.89 (#9 of 17), avg 2.890 (#8 of 17)
+    //   R3: fastest 3.34 (#15 of 22), avg 3.340 (#13 of 22)
+    r1: { fastestStopRank: 15, avgTimeRank: 16 },
+    r2: { fastestStopRank:  9, avgTimeRank:  8 },
+    r3: { fastestStopRank: 15, avgTimeRank: 13 },
   },
   // Haas
   {
     slug: 'haas-pit-crew-31', // Ocon
-    r1: { stopTimes: [2.88],        fastestStopOverall: false },
-    r2: { stopTimes: [5.74, 26.93], fastestStopOverall: false },
-    r3: { stopTimes: [3.46],        fastestStopOverall: false },
+    //   R1: fastest 2.88 (#9 of 18, tie broken by avg), avg 2.880 (#9 of 18)
+    //   R2: fastest 5.74 (#15 of 17), avg 16.335 (#17 of 17)
+    //   R3: fastest 3.46 (#17 of 22), avg 3.460 (#15 of 22)
+    r1: { fastestStopRank:  9, avgTimeRank:  9 },
+    r2: { fastestStopRank: 15, avgTimeRank: 17 },
+    r3: { fastestStopRank: 17, avgTimeRank: 15 },
   },
   {
     slug: 'haas-pit-crew-87', // Bearman (R3 DNF but stops recorded)
-    r1: { stopTimes: [3.26], fastestStopOverall: false },
-    r2: { stopTimes: [2.86], fastestStopOverall: false },
-    r3: { stopTimes: [4.19], fastestStopOverall: false },
+    //   R1: fastest 3.26 (#14 of 18), avg 3.260 (#11 of 18)
+    //   R2: fastest 2.86 (#6 of 17, tie broken alpha), avg 2.860 (#5 of 17)
+    //   R3: fastest 4.19 (#20 of 22), avg 4.190 (#20 of 22)
+    r1: { fastestStopRank: 14, avgTimeRank: 11 },
+    r2: { fastestStopRank:  6, avgTimeRank:  5 },
+    r3: { fastestStopRank: 20, avgTimeRank: 20 },
   },
   // Audi
   {
     slug: 'audi-pit-crew-27', // Hulkenberg (R1 DNS)
+    //   R2: fastest 16.16 (#17 of 17), avg 16.160 (#16 of 17)
+    //   R3: fastest 2.41 (#4 of 22), avg 2.410 (#2 of 22)
     r1: null,
-    r2: { stopTimes: [16.16], fastestStopOverall: false },
-    r3: { stopTimes: [2.41],  fastestStopOverall: false },
+    r2: { fastestStopRank: 17, avgTimeRank: 16 },
+    r3: { fastestStopRank:  4, avgTimeRank:  2 },
   },
   {
     slug: 'audi-pit-crew-5', // Bortoleto (R2 DNS)
-    r1: { stopTimes: [2.88, 6.08], fastestStopOverall: false },
+    //   R1: fastest 2.88 (#10 of 18, tie broken by avg), avg 4.480 (#13 of 18)
+    //   R3: fastest 2.67 (#9 of 22), avg 2.670 (#8 of 22)
+    r1: { fastestStopRank: 10, avgTimeRank: 13 },
     r2: null,
-    r3: { stopTimes: [2.67], fastestStopOverall: false },
+    r3: { fastestStopRank:  9, avgTimeRank:  8 },
   },
   // Alpine
   {
     slug: 'alpine-pit-crew-10', // Gasly
-    r1: { stopTimes: [3.05], fastestStopOverall: false },
-    r2: { stopTimes: [2.82], fastestStopOverall: false },
-    r3: { stopTimes: [3.59], fastestStopOverall: false },
+    //   R1: fastest 3.05 (#12 of 18), avg 3.050 (#10 of 18)
+    //   R2: fastest 2.82 (#5 of 17), avg 2.820 (#4 of 17)
+    //   R3: fastest 3.59 (#18 of 22), avg 3.590 (#17 of 22)
+    r1: { fastestStopRank: 12, avgTimeRank: 10 },
+    r2: { fastestStopRank:  5, avgTimeRank:  4 },
+    r3: { fastestStopRank: 18, avgTimeRank: 17 },
   },
   {
     slug: 'alpine-pit-crew-43', // Colapinto
-    r1: { stopTimes: [2.92, 12.51], fastestStopOverall: false },
-    r2: { stopTimes: [2.54],        fastestStopOverall: false },
-    r3: { stopTimes: [3.00],        fastestStopOverall: false },
+    //   R1: fastest 2.92 (#11 of 18), avg 7.715 (#14 of 18)
+    //   R2: fastest 2.54 (#3 of 17), avg 2.540 (#3 of 17)
+    //   R3: fastest 3.00 (#14 of 22), avg 3.000 (#12 of 22)
+    r1: { fastestStopRank: 11, avgTimeRank: 14 },
+    r2: { fastestStopRank:  3, avgTimeRank:  3 },
+    r3: { fastestStopRank: 14, avgTimeRank: 12 },
   },
   // Cadillac
   {
     slug: 'cadillac-pit-crew-11', // Perez
-    r1: { stopTimes: [3.11, 5.52], fastestStopOverall: false },
-    r2: { stopTimes: [5.58],       fastestStopOverall: false },
-    r3: { stopTimes: [6.28],       fastestStopOverall: false },
+    //   R1: fastest 3.11 (#13 of 18), avg 4.315 (#12 of 18)
+    //   R2: fastest 5.58 (#14 of 17), avg 5.580 (#14 of 17)
+    //   R3: fastest 6.28 (#22 of 22), avg 6.280 (#22 of 22)
+    r1: { fastestStopRank: 13, avgTimeRank: 12 },
+    r2: { fastestStopRank: 14, avgTimeRank: 14 },
+    r3: { fastestStopRank: 22, avgTimeRank: 22 },
   },
   {
     slug: 'cadillac-pit-crew-77', // Bottas
-    r1: { stopTimes: [12.57], fastestStopOverall: false },
-    r2: { stopTimes: [7.35],  fastestStopOverall: false },
-    r3: { stopTimes: [4.04],  fastestStopOverall: false },
+    //   R1: fastest 12.57 (#18 of 18), avg 12.570 (#17 of 18)
+    //   R2: fastest 7.35 (#16 of 17), avg 7.350 (#15 of 17)
+    //   R3: fastest 4.04 (#19 of 22), avg 4.040 (#19 of 22)
+    r1: { fastestStopRank: 18, avgTimeRank: 17 },
+    r2: { fastestStopRank: 16, avgTimeRank: 15 },
+    r3: { fastestStopRank: 19, avgTimeRank: 19 },
   },
   // Aston Martin
   {
     slug: 'aston-martin-pit-crew-14', // Alonso
-    r1: { stopTimes: [10.19],       fastestStopOverall: false },
-    r2: { stopTimes: [2.99],        fastestStopOverall: false },
-    r3: { stopTimes: [2.95, 4.38],  fastestStopOverall: false },
+    //   R1: fastest 10.19 (#17 of 18), avg 10.190 (#15 of 18)
+    //   R2: fastest 2.99 (#10 of 17), avg 2.990 (#9 of 17)
+    //   R3: fastest 2.95 (#13 of 22), avg 3.665 (#18 of 22)
+    r1: { fastestStopRank: 17, avgTimeRank: 15 },
+    r2: { fastestStopRank: 10, avgTimeRank:  9 },
+    r3: { fastestStopRank: 13, avgTimeRank: 18 },
   },
   {
     slug: 'aston-martin-pit-crew-18', // Stroll (R2 DNF — no stops recorded)
-    r1: { stopTimes: [5.71, 16.52, 17.07], fastestStopOverall: false },
+    //   R1: fastest 5.71 (#16 of 18), avg 13.100 (#18 of 18)
+    //   R3: fastest 2.74 (#10 of 22), avg 3.500 (#16 of 22)
+    r1: { fastestStopRank: 16, avgTimeRank: 18 },
     r2: null,
-    r3: { stopTimes: [2.74, 4.26], fastestStopOverall: false },
+    r3: { fastestStopRank: 10, avgTimeRank: 16 },
   },
 ];
 
@@ -366,7 +427,7 @@ async function seedHistoricalResults() {
     for (const rd of rounds) {
       if (!rd) continue; // DNS or no data
       racesCompleted++;
-      totalPoints += calculatePitCrewScore(rd.stopTimes, rd.fastestStopOverall);
+      totalPoints += calculatePitCrewScore(rd.fastestStopRank ?? 20, rd.avgTimeRank ?? 20);
     }
 
     totalPoints      = Math.round(totalPoints * 100) / 100;
