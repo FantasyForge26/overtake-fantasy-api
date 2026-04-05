@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { connectDB } from './db';
 import { Asset } from './models';
-import { calculateOTFRating, calculatePitCrewScore } from './otf-calculator';
+import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore } from './otf-calculator';
 
 // ---------------------------------------------------------------------------
 // Driver historical stats — Rounds 1–3 (Australia, China, Japan)
@@ -457,6 +457,70 @@ async function seedHistoricalResults() {
 
     await asset.save();
     console.log(`  ✓ ${pc.slug}: ${totalPoints} pts, avg ${avgPointsPerRace}, OTF ${asset.otfRating}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Power units — avg finish position per team per race → calculatePowerUnitScore
+  // DNF/DNS treated as P20. racesCompleted = 3 for all (all teams entered all rounds).
+  // ---------------------------------------------------------------------------
+  console.log('\nUpdating power unit historical stats...');
+
+  // avg finish position per team per round (pre-computed from race results above)
+  const puStats: { slug: string; r1avg: number; r2avg: number; r3avg: number }[] = [
+    // R1: avg(6,20)=13    R2: avg(20,8)=14    R3: avg(8,12)=10
+    { slug: 'red-bull-pu',      r1avg: 13.0, r2avg: 14.0, r3avg: 10.0 },
+    // R1: avg(13,8)=10.5  R2: avg(7,12)=9.5   R3: avg(9,14)=11.5
+    { slug: 'racing-bulls-pu',  r1avg: 10.5, r2avg:  9.5, r3avg: 11.5 },
+    // R1: avg(5,20)=12.5  R2: avg(20,20)=20   R3: avg(5,2)=3.5
+    { slug: 'mclaren-pu',       r1avg: 12.5, r2avg: 20.0, r3avg:  3.5 },
+    // R1: avg(1,2)=1.5    R2: avg(2,1)=1.5    R3: avg(4,1)=2.5
+    { slug: 'mercedes-pu',      r1avg:  1.5, r2avg:  1.5, r3avg:  2.5 },
+    // R1: avg(3,4)=3.5    R2: avg(4,3)=3.5    R3: avg(3,6)=4.5
+    { slug: 'ferrari-pu',       r1avg:  3.5, r2avg:  3.5, r3avg:  4.5 },
+    // R1: avg(20,20)=20   R2: avg(20,20)=20   R3: avg(18,20)=19
+    { slug: 'aston-martin-pu',  r1avg: 20.0, r2avg: 20.0, r3avg: 19.0 },
+    // R1: avg(15,12)=13.5 R2: avg(9,20)=14.5  R3: avg(15,20)=17.5
+    { slug: 'williams-pu',      r1avg: 13.5, r2avg: 14.5, r3avg: 17.5 },
+    // R1: avg(20,9)=14.5  R2: avg(11,20)=15.5 R3: avg(11,13)=12
+    { slug: 'audi-pu',          r1avg: 14.5, r2avg: 15.5, r3avg: 12.0 },
+    // R1: avg(7,11)=9     R2: avg(5,14)=9.5   R3: avg(20,10)=15
+    { slug: 'haas-pu',          r1avg:  9.0, r2avg:  9.5, r3avg: 15.0 },
+    // R1: avg(10,14)=12   R2: avg(6,10)=8     R3: avg(7,16)=11.5
+    { slug: 'alpine-pu',        r1avg: 12.0, r2avg:  8.0, r3avg: 11.5 },
+    // R1: avg(16,20)=18   R2: avg(15,13)=14   R3: avg(17,19)=18
+    { slug: 'cadillac-pu',      r1avg: 18.0, r2avg: 14.0, r3avg: 18.0 },
+  ];
+
+  for (const pu of puStats) {
+    const r1pts = calculatePowerUnitScore(pu.r1avg);
+    const r2pts = calculatePowerUnitScore(pu.r2avg);
+    const r3pts = calculatePowerUnitScore(pu.r3avg);
+    const totalPoints      = Math.round((r1pts + r2pts + r3pts) * 100) / 100;
+    const racesCompleted   = 3;
+    const avgPointsPerRace = Math.round((totalPoints / racesCompleted) * 100) / 100;
+
+    const asset = await Asset.findOne({ slug: pu.slug, assetType: 'powerUnit', season: 2026 });
+    if (!asset) {
+      console.warn(`  ⚠ Power unit not found: ${pu.slug}`);
+      continue;
+    }
+
+    asset.totalPoints      = totalPoints;
+    asset.avgPointsPerRace = avgPointsPerRace;
+    asset.racesCompleted   = racesCompleted;
+    asset.dnfCount         = 0;
+    asset.otfRating        = calculateOTFRating({
+      otfBaseRating:    asset.otfBaseRating,
+      racesCompleted:   asset.racesCompleted,
+      avgPointsPerRace: asset.avgPointsPerRace,
+      totalPoints:      asset.totalPoints,
+      age:              undefined,
+      teamStrength:     asset.teamStrength,
+      dnfCount:         0,
+    });
+
+    await asset.save();
+    console.log(`  ✓ ${pu.slug}: r1=${r1pts} r2=${r2pts} r3=${r3pts} total=${totalPoints}, OTF ${asset.otfRating}`);
   }
 
   // ---------------------------------------------------------------------------
