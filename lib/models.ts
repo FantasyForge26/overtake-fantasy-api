@@ -227,6 +227,29 @@ const TransactionSchema = new Schema({
 });
 
 // ---------------------------------------------------------------------------
+// PerformanceSelection
+// ---------------------------------------------------------------------------
+
+const PerformanceSelectionSchema = new Schema({
+  leagueId:           { type: Schema.Types.ObjectId, ref: 'League', required: true },
+  userId:             { type: String, required: true },
+  season:             { type: Number, default: 2026 },
+  round:              { type: Number, required: true },
+  driver1Boost:       { type: Schema.Types.ObjectId, ref: 'Asset' },
+  driver2Boost:       { type: Schema.Types.ObjectId, ref: 'Asset' },
+  pitCrew1Boost:      { type: Schema.Types.ObjectId, ref: 'Asset' },
+  pitCrew2Boost:      { type: Schema.Types.ObjectId, ref: 'Asset' },
+  driver1BoostCount:  { type: Number, default: 0 },
+  driver2BoostCount:  { type: Number, default: 0 },
+  pitCrew1BoostCount: { type: Number, default: 0 },
+  pitCrew2BoostCount: { type: Number, default: 0 },
+  submittedAt:        { type: Date },
+  locked:             { type: Boolean, default: false },
+});
+
+PerformanceSelectionSchema.index({ leagueId: 1, userId: 1, season: 1, round: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // RaceCalendar
 // ---------------------------------------------------------------------------
 
@@ -258,5 +281,6 @@ export const Contract       = mongoose.models.Contract       || mongoose.model('
 export const SeasonStanding = mongoose.models.SeasonStanding || mongoose.model('SeasonStanding', SeasonStandingSchema);
 export const DraftSession   = mongoose.models.DraftSession   || mongoose.model('DraftSession',   DraftSessionSchema);
 export const DraftQueue     = mongoose.models.DraftQueue     || mongoose.model('DraftQueue',     DraftQueueSchema);
-export const Transaction    = mongoose.models.Transaction    || mongoose.model('Transaction',    TransactionSchema);
-export const RaceCalendar   = mongoose.models.RaceCalendar   || mongoose.model('RaceCalendar',   RaceCalendarSchema);
+export const Transaction           = mongoose.models.Transaction           || mongoose.model('Transaction',           TransactionSchema);
+export const PerformanceSelection  = mongoose.models.PerformanceSelection  || mongoose.model('PerformanceSelection',  PerformanceSelectionSchema);
+export const RaceCalendar          = mongoose.models.RaceCalendar          || mongoose.model('RaceCalendar',          RaceCalendarSchema);
