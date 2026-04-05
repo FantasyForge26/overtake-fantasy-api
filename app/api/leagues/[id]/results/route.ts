@@ -129,10 +129,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           startPosition: dr.startPosition ?? 20,
           teammateFinishPosition: teammateFinish,
           fastestLap: dr.fastestLap ?? false,
-          speedTrapViolation: dr.speedTrapViolation ?? false,
           notClassified: dr.notClassified ?? false,
-          dnf: dr.dnf ?? false,
-          penalizedSeconds: dr.penalizedSeconds ?? 0,
+          dsq: false,
+          startedInTop10: (dr.startPosition ?? 20) <= 10,
         });
         if (perf?.driver1Boost?.toString() === d1._id.toString()) pts *= 2;
         racePoints += pts;
@@ -153,10 +152,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           startPosition: dr.startPosition ?? 20,
           teammateFinishPosition: teammateFinish,
           fastestLap: dr.fastestLap ?? false,
-          speedTrapViolation: dr.speedTrapViolation ?? false,
           notClassified: dr.notClassified ?? false,
-          dnf: dr.dnf ?? false,
-          penalizedSeconds: dr.penalizedSeconds ?? 0,
+          dsq: false,
+          startedInTop10: (dr.startPosition ?? 20) <= 10,
         });
         if (perf?.driver2Boost?.toString() === d2._id.toString()) pts *= 2;
         racePoints += pts;
