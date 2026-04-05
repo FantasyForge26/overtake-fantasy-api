@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { name, format, maxManagers, isPublic, draftMode, slowDraftPickHours, pauseStart, pauseEnd, pickTimeLimitSeconds, draftOrderMode, draftDateTime, freeAgencyType, acquisitionType, ccStartingBalance } = await req.json();
+  const { name, format, maxManagers, isPublic, draftMode, slowDraftPickHours, pauseStart, pauseEnd, pickTimeLimitSeconds, draftOrderMode, draftDateTime, freeAgencyType, acquisitionType, ccStartingBalance, minRacesHeld } = await req.json();
 
   await connectDB();
 
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
     ...(freeAgencyType && { freeAgencyType }),
     ...(acquisitionType && { acquisitionType }),
     ...(ccStartingBalance !== undefined && { ccStartingBalance }),
+    ...(minRacesHeld !== undefined && { minRacesHeld }),
     scoring: {
       poleBonus: 10,
       raceFirstBonus: 25,
