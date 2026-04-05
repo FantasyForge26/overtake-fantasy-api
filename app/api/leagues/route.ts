@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { name, format, maxManagers, isPublic, draftMode, slowDraftPickHours, pauseStart, pauseEnd, pickTimerSeconds, draftOrderMode, draftDateTime, freeAgencyType, acquisitionType, ccStartingBalance } = await req.json();
+  const { name, format, maxManagers, isPublic, draftMode, slowDraftPickHours, pauseStart, pauseEnd, pickTimeLimitSeconds, draftOrderMode, draftDateTime, freeAgencyType, acquisitionType, ccStartingBalance } = await req.json();
 
   await connectDB();
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     ...(slowDraftPickHours !== undefined && { slowDraftPickHours }),
     ...(pauseStart && { pauseStart }),
     ...(pauseEnd && { pauseEnd }),
-    ...(pickTimerSeconds !== undefined && { pickTimerSeconds }),
+    ...(pickTimeLimitSeconds !== undefined && { pickTimeLimitSeconds }),
     ...(draftOrderMode && { draftOrderMode }),
     ...(draftDateTime && { draftDateTime: new Date(draftDateTime) }),
     ...(freeAgencyType && { freeAgencyType }),
