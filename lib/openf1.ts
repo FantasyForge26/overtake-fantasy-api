@@ -59,7 +59,7 @@ interface OF1Pit {
 
 async function apiFetch<T>(path: string, params: Record<string, string | number> = {}): Promise<T[]> {
   const qs = Object.entries(params)
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .map(([k, v]) => `${k}${k.endsWith('=') ? '' : '='}${encodeURIComponent(String(v))}`)
     .join('&');
   const url = `${BASE_URL}${path}${qs ? `?${qs}` : ''}`;
   let res = await fetch(url);
