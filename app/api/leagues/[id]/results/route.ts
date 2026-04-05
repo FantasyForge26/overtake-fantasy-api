@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db';
 import { League, Roster, Asset, RaceResult, PerformanceSelection, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import {
-  calculateDriverScore,
+  calculateDriverRaceScore,
   calculatePrincipalScore,
   calculatePitCrewScore,
   calculatePowerUnitScore,
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           return a?.teamSlug === d1.teamSlug && x.driverSlug !== d1.slug;
         });
         const teammateFinish = teamDrivers[0]?.finishPosition ?? 20;
-        let pts = calculateDriverScore({
+        let pts = calculateDriverRaceScore({
           finishPosition: dr.finishPosition ?? 20,
           startPosition: dr.startPosition ?? 20,
           teammateFinishPosition: teammateFinish,
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           return a?.teamSlug === d2.teamSlug && x.driverSlug !== d2.slug;
         });
         const teammateFinish = teamDrivers[0]?.finishPosition ?? 20;
-        let pts = calculateDriverScore({
+        let pts = calculateDriverRaceScore({
           finishPosition: dr.finishPosition ?? 20,
           startPosition: dr.startPosition ?? 20,
           teammateFinishPosition: teammateFinish,
