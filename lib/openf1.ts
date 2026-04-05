@@ -4,6 +4,7 @@
  */
 
 const BASE_URL = 'https://api.openf1.org/v1';
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -108,10 +109,10 @@ export async function getSession(
 export async function getRaceResults(
   sessionKey: number,
 ): Promise<Array<{ driverNumber: number; position: number; dnf: boolean }>> {
-  const [positions, laps] = await Promise.all([
-    apiFetch<OF1Position>('/position', { session_key: sessionKey }),
-    apiFetch<OF1Lap>('/laps', { session_key: sessionKey }),
-  ]);
+  await sleep(500);
+  const positions = await apiFetch<OF1Position>('/position', { session_key: sessionKey });
+  await sleep(500);
+  const laps = await apiFetch<OF1Lap>('/laps', { session_key: sessionKey });
 
   // Latest position record per driver
   const lastPos = new Map<number, { position: number; date: string }>();
@@ -150,6 +151,7 @@ export async function getRaceResults(
 export async function getQualifyingResults(
   sessionKey: number,
 ): Promise<Array<{ driverNumber: number; position: number; qualifyingRound: 'Q1' | 'Q2' | 'Q3' }>> {
+  await sleep(500);
   const laps = await apiFetch<OF1Lap>('/laps', { session_key: sessionKey });
 
   const bestLap = new Map<number, number>();
@@ -179,6 +181,7 @@ export async function getQualifyingResults(
 export async function getPitStopData(
   sessionKey: number,
 ): Promise<Array<{ driverNumber: number; stopTimes: number[]; fastestStopOverall: boolean }>> {
+  await sleep(500);
   const pits = await apiFetch<OF1Pit>('/pit', { session_key: sessionKey });
 
   const byDriver = new Map<number, number[]>();
@@ -214,12 +217,14 @@ export async function getPitStopData(
 export async function getGridPositions(
   sessionKey: number,
 ): Promise<Array<{ driverNumber: number; gridPosition: number }>> {
+  await sleep(500);
   const sessions = await apiFetch<OF1Session>('/sessions', { session_key: sessionKey });
   if (!sessions.length) throw new Error(`Session not found: ${sessionKey}`);
 
   const { date_start } = sessions[0];
   const cutoff = new Date(new Date(date_start).getTime() + 5 * 60 * 1000).toISOString();
 
+  await sleep(500);
   const positions = await apiFetch<OF1Position>('/position', {
     session_key: sessionKey,
     'date>=': date_start,

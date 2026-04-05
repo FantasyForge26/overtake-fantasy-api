@@ -60,6 +60,8 @@ function pitCrewCarNumber(slug: string): number {
 // Route
 // ---------------------------------------------------------------------------
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
   const querySecret = req.nextUrl.searchParams.get('secret');
@@ -84,10 +86,9 @@ export async function GET(req: NextRequest) {
   // Fetch from OpenF1 — race & qualifying session keys in parallel, then data
   // ---------------------------------------------------------------------------
 
-  const [raceSession, qualSession] = await Promise.all([
-    getSession(2026, 'Race', round),
-    getSession(2026, 'Qualifying', round),
-  ]);
+  const raceSession = await getSession(2026, 'Race', round);
+  await sleep(500);
+  const qualSession = await getSession(2026, 'Qualifying', round);
 
   const [raceResults, qualResults, pitStops, gridPositions] = await Promise.all([
     getRaceResults(raceSession.session_key),
