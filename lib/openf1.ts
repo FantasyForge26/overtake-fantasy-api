@@ -62,7 +62,11 @@ async function apiFetch<T>(path: string, params: Record<string, string | number>
     .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
     .join('&');
   const url = `${BASE_URL}${path}${qs ? `?${qs}` : ''}`;
-  const res = await fetch(url);
+  let res = await fetch(url);
+  if (res.status === 429) {
+    await sleep(3000);
+    res = await fetch(url);
+  }
   if (!res.ok) throw new Error(`OpenF1 ${res.status}: GET ${url}`);
   return res.json() as Promise<T[]>;
 }
