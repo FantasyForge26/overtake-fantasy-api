@@ -212,6 +212,19 @@ const DraftQueueSchema = new Schema({
 DraftQueueSchema.index({ leagueId: 1, userId: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// Transaction
+// ---------------------------------------------------------------------------
+
+const TransactionSchema = new Schema({
+  leagueId:    { type: Schema.Types.ObjectId, ref: 'League', required: true },
+  userId:      { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  type:        { type: String, enum: ['add', 'drop'], required: true },
+  addAssetId:  { type: Schema.Types.ObjectId, ref: 'Asset' },
+  dropAssetId: { type: Schema.Types.ObjectId, ref: 'Asset' },
+  createdAt:   { type: Date, default: Date.now },
+});
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -223,3 +236,4 @@ export const Contract       = mongoose.models.Contract       || mongoose.model('
 export const SeasonStanding = mongoose.models.SeasonStanding || mongoose.model('SeasonStanding', SeasonStandingSchema);
 export const DraftSession   = mongoose.models.DraftSession   || mongoose.model('DraftSession',   DraftSessionSchema);
 export const DraftQueue     = mongoose.models.DraftQueue     || mongoose.model('DraftQueue',     DraftQueueSchema);
+export const Transaction    = mongoose.models.Transaction    || mongoose.model('Transaction',    TransactionSchema);
