@@ -81,9 +81,9 @@ export async function getSession(
 ): Promise<number> {
   const meetings = await apiFetch<OF1Meeting>('/meetings', { year });
 
-  const sorted = [...meetings].sort(
-    (a, b) => new Date(a.date_start).getTime() - new Date(b.date_start).getTime(),
-  );
+  const sorted = meetings
+    .filter(m => !/test/i.test(m.meeting_name))
+    .sort((a, b) => new Date(a.date_start).getTime() - new Date(b.date_start).getTime());
 
   const meeting = sorted[round - 1];
   if (!meeting) throw new Error(`No meeting found for ${year} round ${round}`);
