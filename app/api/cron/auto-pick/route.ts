@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 
-function neededAssetType(roster: any): string {
-  if (!roster.driver1AssetId)   return 'driver';
-  if (!roster.driver2AssetId)   return 'driver';
-  if (!roster.principalAssetId) return 'principal';
-  if (!roster.pitCrew1AssetId)  return 'pitCrew';
-  if (!roster.pitCrew2AssetId)  return 'pitCrew';
-  return 'powerUnit';
+function neededAssetTypes(roster: any): string[] {
+  const needed: string[] = [];
+  if (!roster.driver1AssetId || !roster.driver2AssetId) needed.push('driver');
+  if (!roster.principalAssetId)                         needed.push('principal');
+  if (!roster.pitCrew1AssetId || !roster.pitCrew2AssetId) needed.push('pitCrew');
+  if (!roster.powerUnitAssetId)                         needed.push('powerUnit');
+  return needed;
 }
 
 export async function GET(req: NextRequest) {
@@ -43,30 +43,37 @@ export async function GET(req: NextRequest) {
     const roster = await Roster.findOne({ leagueId, userId });
     if (!roster) continue;
 
-    const assetType = neededAssetType(roster);
+    const neededTypes = neededAssetTypes(roster);
+    if (neededTypes.length === 0) continue;
+
     const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
 
-    // Check queue first
+    // Check queue first — pick the first queued asset whose type fills an open slot
     const draftQueue = await DraftQueue.findOne({ leagueId, userId });
     const queuedIds = draftQueue?.queue?.map((id: any) => id.toString()) ?? [];
     const queuedPickId = queuedIds.find((qid: string) => availableIds.includes(qid));
 
     let bestAsset: any = null;
     if (queuedPickId) {
-      const queued = await Asset.findOne({ _id: queuedPickId, assetType, isActive: true }).select('_id assetType');
+      const queued = await Asset.findOne({
+        _id: queuedPickId,
+        assetType: { $in: neededTypes },
+        isActive: true,
+      }).select('_id assetType');
       if (queued) bestAsset = queued;
     }
 
-    // Fall back to highest OTF rating
+    // Fall back to the highest OTF asset across all needed slot types
     if (!bestAsset) {
       bestAsset = await Asset
-        .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
+        .findOne({ _id: { $in: availableIds }, assetType: { $in: neededTypes }, isActive: true })
         .sort({ otfRating: -1 })
         .select('_id assetType');
     }
 
     if (!bestAsset) continue;
 
+    const assetType = bestAsset.assetType as string;
     const assetId = bestAsset._id.toString();
 
     // Mark user as auto-draft BEFORE saving so clients see it immediately
