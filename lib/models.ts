@@ -34,6 +34,10 @@ const AssetSchema = new Schema({
   avgPointsPerRace:   { type: Number, default: 0 },
   racesCompleted:     { type: Number, default: 0 },
   dnfCount:           { type: Number, default: 0 },
+  qualifyingRaces:    { type: Number, default: 0 },
+  q1Count:            { type: Number, default: 0 },
+  q2Count:            { type: Number, default: 0 },
+  q3Count:            { type: Number, default: 0 },
   age:                { type: Number },
   teamStrength:       { type: Number, default: 50 },
 });
@@ -220,9 +224,10 @@ DraftQueueSchema.index({ leagueId: 1, userId: 1 }, { unique: true });
 const TransactionSchema = new Schema({
   leagueId:    { type: Schema.Types.ObjectId, ref: 'League', required: true },
   userId:      { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type:        { type: String, enum: ['add', 'drop', 'draft', 'trade', 'race'], required: true },
+  type:        { type: String, enum: ['add', 'drop', 'draft', 'trade', 'race', 'settings'], required: true },
   addAssetId:  { type: Schema.Types.ObjectId, ref: 'Asset' },
   dropAssetId: { type: Schema.Types.ObjectId, ref: 'Asset' },
+  note:        { type: String },
   createdAt:   { type: Date, default: Date.now },
 });
 

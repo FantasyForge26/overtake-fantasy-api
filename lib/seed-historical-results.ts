@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { connectDB } from './db';
 import { Asset } from './models';
-import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore, calculatePrincipalScore } from './otf-calculator';
+import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore, calculatePrincipalScore, calculateDriverQualifyingScore } from './otf-calculator';
 
 // ---------------------------------------------------------------------------
 // Driver historical stats — Rounds 1–3 (Australia, China, Japan)
@@ -602,6 +602,238 @@ async function seedHistoricalResults() {
 
     await asset.save();
     console.log(`  ✓ ${ps.slug}: r1=${r1pts} r2=${r2pts} r3=${r3pts} total=${totalPoints}, OTF ${asset.otfRating}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Driver qualifying stats — Rounds 1–3
+  // ---------------------------------------------------------------------------
+  console.log('\nSeeding driver qualifying stats...');
+
+  interface QualifyingRaceEntry {
+    position:       number;
+    round:          'Q1' | 'Q2' | 'Q3';
+    beatenTeammate: boolean;
+  }
+
+  interface DriverQualifyingStats {
+    slug:    string;
+    races:   [QualifyingRaceEntry, QualifyingRaceEntry, QualifyingRaceEntry];
+    q3Count: number;
+    q2Count: number;
+  }
+
+  const driverQualifyingStats: DriverQualifyingStats[] = [
+    {
+      slug: 'george-russell', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 3,  round: 'Q3', beatenTeammate: true  },
+        { position: 4,  round: 'Q3', beatenTeammate: false },
+        { position: 4,  round: 'Q3', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'kimi-antonelli', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 5,  round: 'Q3', beatenTeammate: false },
+        { position: 2,  round: 'Q3', beatenTeammate: true  },
+        { position: 2,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'charles-leclerc', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 4,  round: 'Q3', beatenTeammate: true  },
+        { position: 6,  round: 'Q3', beatenTeammate: false },
+        { position: 3,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'lewis-hamilton', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 10, round: 'Q3', beatenTeammate: false },
+        { position: 3,  round: 'Q3', beatenTeammate: true  },
+        { position: 8,  round: 'Q3', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'lando-norris', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 8,  round: 'Q3', beatenTeammate: false },
+        { position: 8,  round: 'Q3', beatenTeammate: false },
+        { position: 7,  round: 'Q3', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'oscar-piastri', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 6,  round: 'Q3', beatenTeammate: true  },
+        { position: 5,  round: 'Q3', beatenTeammate: true  },
+        { position: 5,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'max-verstappen', q3Count: 1, q2Count: 2,
+      races: [
+        { position: 17, round: 'Q1', beatenTeammate: true  },
+        { position: 6,  round: 'Q3', beatenTeammate: true  },
+        { position: 11, round: 'Q2', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'isack-hadjar', q3Count: 3, q2Count: 3,
+      races: [
+        { position: 1,  round: 'Q3', beatenTeammate: false },
+        { position: 9,  round: 'Q3', beatenTeammate: false },
+        { position: 6,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'liam-lawson', q3Count: 1, q2Count: 3,
+      races: [
+        { position: 7,  round: 'Q3', beatenTeammate: false },
+        { position: 13, round: 'Q2', beatenTeammate: true  },
+        { position: 16, round: 'Q2', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'arvid-lindblad', q3Count: 2, q2Count: 3,
+      races: [
+        { position: 11, round: 'Q2', beatenTeammate: true  },
+        { position: 16, round: 'Q2', beatenTeammate: false },
+        { position: 9,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'oliver-bearman', q3Count: 1, q2Count: 2,
+      races: [
+        { position: 12, round: 'Q2', beatenTeammate: true  },
+        { position: 8,  round: 'Q3', beatenTeammate: false },
+        { position: 19, round: 'Q1', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'esteban-ocon', q3Count: 0, q2Count: 3,
+      races: [
+        { position: 15, round: 'Q2', beatenTeammate: true  },
+        { position: 15, round: 'Q2', beatenTeammate: true  },
+        { position: 12, round: 'Q2', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'pierre-gasly', q3Count: 2, q2Count: 3,
+      races: [
+        { position: 14, round: 'Q2', beatenTeammate: false },
+        { position: 7,  round: 'Q3', beatenTeammate: false },
+        { position: 1,  round: 'Q3', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'franco-colapinto', q3Count: 0, q2Count: 3,
+      races: [
+        { position: 16, round: 'Q2', beatenTeammate: false },
+        { position: 14, round: 'Q2', beatenTeammate: false },
+        { position: 14, round: 'Q2', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'carlos-sainz', q3Count: 0, q2Count: 0,
+      races: [
+        { position: 19, round: 'Q1', beatenTeammate: false },
+        { position: 17, round: 'Q1', beatenTeammate: false },
+        { position: 17, round: 'Q1', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'alex-albon', q3Count: 0, q2Count: 1,
+      races: [
+        { position: 18, round: 'Q1', beatenTeammate: true  },
+        { position: 20, round: 'Q1', beatenTeammate: true  },
+        { position: 20, round: 'Q1', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'nico-hulkenberg', q3Count: 0, q2Count: 3,
+      races: [
+        { position: 14, round: 'Q2', beatenTeammate: true  },
+        { position: 11, round: 'Q2', beatenTeammate: true  },
+        { position: 15, round: 'Q2', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'gabriel-bortoleto', q3Count: 2, q2Count: 2,
+      races: [
+        { position: 9,  round: 'Q3', beatenTeammate: false },
+        { position: 18, round: 'Q1', beatenTeammate: false },
+        { position: 10, round: 'Q3', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'sergio-perez', q3Count: 0, q2Count: 0,
+      races: [
+        { position: 20, round: 'Q1', beatenTeammate: false },
+        { position: 19, round: 'Q1', beatenTeammate: false },
+        { position: 18, round: 'Q1', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'valtteri-bottas', q3Count: 0, q2Count: 0,
+      races: [
+        { position: 18, round: 'Q1', beatenTeammate: true  },
+        { position: 18, round: 'Q1', beatenTeammate: false },
+        { position: 21, round: 'Q1', beatenTeammate: false },
+      ],
+    },
+    {
+      slug: 'fernando-alonso', q3Count: 0, q2Count: 0,
+      races: [
+        { position: 16, round: 'Q1', beatenTeammate: true  },
+        { position: 15, round: 'Q1', beatenTeammate: true  },
+        { position: 19, round: 'Q1', beatenTeammate: true  },
+      ],
+    },
+    {
+      slug: 'lance-stroll', q3Count: 0, q2Count: 0,
+      races: [
+        { position: 20, round: 'Q1', beatenTeammate: false },
+        { position: 20, round: 'Q1', beatenTeammate: false },
+        { position: 22, round: 'Q1', beatenTeammate: false },
+      ],
+    },
+  ];
+
+  for (const dqs of driverQualifyingStats) {
+    const asset = await Asset.findOne({ slug: dqs.slug, assetType: 'driver', season: 2026 });
+    if (!asset) { console.warn(`  ⚠ driver not found: ${dqs.slug}`); continue; }
+
+    let qualifyingPoints = 0;
+    for (const race of dqs.races) {
+      qualifyingPoints += calculateDriverQualifyingScore({
+        qualifyingPosition:  race.position,
+        qualifyingRound:     race.round,
+        beatenTeammate:      race.beatenTeammate,
+        didNotQualify:       false,
+        dsqFromQualifying:   false,
+      });
+    }
+
+    asset.qualifyingRaces    = 3;
+    asset.q1Count            = 3; // all drivers entered Q1
+    asset.q2Count            = dqs.q2Count;
+    asset.q3Count            = dqs.q3Count;
+    asset.totalPoints        = (asset.totalPoints ?? 0) + qualifyingPoints;
+    asset.avgPointsPerRace   = asset.totalPoints / (asset.racesCompleted + asset.qualifyingRaces);
+    asset.otfRating          = calculateOTFRating({
+      otfBaseRating:    asset.otfBaseRating,
+      racesCompleted:   asset.racesCompleted + asset.qualifyingRaces,
+      avgPointsPerRace: asset.avgPointsPerRace,
+      totalPoints:      asset.totalPoints,
+      age:              asset.age,
+      teamStrength:     asset.teamStrength,
+      dnfCount:         asset.dnfCount ?? 0,
+    });
+
+    await asset.save();
+    console.log(`  ✓ ${dqs.slug}: +${qualifyingPoints.toFixed(1)} qualifying pts → total=${asset.totalPoints.toFixed(1)}, OTF ${asset.otfRating}`);
   }
 
   // ---------------------------------------------------------------------------
