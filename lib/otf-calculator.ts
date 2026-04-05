@@ -41,16 +41,14 @@ export interface DriverScoreInput {
 }
 
 export function calculateDriverScore(input: DriverScoreInput): number {
-  if (input.dnf || input.notClassified) return 0;
-
   const basePoints = FINISH_POINTS[input.finishPosition] ?? 0;
 
-  // Positions gained vs grid start
-  const positionsGained = input.startPosition - input.finishPosition;
-  const positionsScore = positionsGained * 0.5;
+  // Positions gained/lost vs grid start
+  const delta = input.startPosition - input.finishPosition;
+  const positionsScore = delta > 0 ? delta * 0.75 : delta * 0.25;
 
   // Beat teammate bonus
-  const beatTeammate = input.finishPosition < input.teammateFinishPosition ? 3 : 0;
+  const beatTeammate = input.finishPosition < input.teammateFinishPosition ? 10 : 0;
 
   // Fastest lap bonus
   const fastestLapBonus = input.fastestLap ? 5 : 0;
@@ -58,10 +56,14 @@ export function calculateDriverScore(input: DriverScoreInput): number {
   // Speed trap violation penalty
   const speedTrapPenalty = input.speedTrapViolation ? -5 : 0;
 
-  // Time penalties (1 point per 5 seconds)
-  const timePenalty = input.penalizedSeconds > 0 ? -(input.penalizedSeconds / 5) : 0;
+  // Time penalties (0.5 points per second)
+  const timePenalty = input.penalizedSeconds > 0 ? -(input.penalizedSeconds * 0.5) : 0;
 
-  return Math.max(0, basePoints + positionsScore + beatTeammate + fastestLapBonus + speedTrapPenalty + timePenalty);
+  // DNF / not classified penalties
+  const dnfPenalty = input.dnf ? -10 : 0;
+  const ncPenalty = input.notClassified ? -10 : 0;
+
+  return basePoints + positionsScore + beatTeammate + fastestLapBonus + speedTrapPenalty + timePenalty + dnfPenalty + ncPenalty;
 }
 
 // ---------------------------------------------------------------------------
