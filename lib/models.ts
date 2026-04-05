@@ -227,6 +227,26 @@ const TransactionSchema = new Schema({
 });
 
 // ---------------------------------------------------------------------------
+// RaceCalendar
+// ---------------------------------------------------------------------------
+
+const RaceCalendarSchema = new Schema({
+  round:             { type: Number, required: true },
+  season:            { type: Number, required: true },
+  name:              { type: String, required: true },
+  country:           { type: String, required: true },
+  circuit:           { type: String, required: true },
+  raceDate:          { type: Date, required: true },
+  qualifyingDate:    { type: Date, required: true },
+  sprintDate:        { type: Date },
+  selectionDeadline: { type: Date, required: true },
+  isSprint:          { type: Boolean, default: false },
+  cancelled:         { type: Boolean, default: false },
+});
+
+RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -239,3 +259,4 @@ export const SeasonStanding = mongoose.models.SeasonStanding || mongoose.model('
 export const DraftSession   = mongoose.models.DraftSession   || mongoose.model('DraftSession',   DraftSessionSchema);
 export const DraftQueue     = mongoose.models.DraftQueue     || mongoose.model('DraftQueue',     DraftQueueSchema);
 export const Transaction    = mongoose.models.Transaction    || mongoose.model('Transaction',    TransactionSchema);
+export const RaceCalendar   = mongoose.models.RaceCalendar   || mongoose.model('RaceCalendar',   RaceCalendarSchema);
