@@ -82,7 +82,7 @@ const LeagueSchema = new Schema({
   waiversClearDay:  { type: String, enum: ['none', 'tue', 'wed', 'thu'], default: 'wed' },
   waiverHoldDays:   { type: Number, default: 2 },
   freeAgencyType:   { type: String, enum: ['freeForAll', 'contracts'], default: 'freeForAll' },
-  acquisitionType:  { type: String, enum: ['instant', 'waivers'], default: 'instant' },
+  acquisitionType:  { type: String, enum: ['instant', 'waivers', 'reverseStandings'], default: 'instant' },
   ccStartingBalance: { type: Number, default: 100 },
   draftDateTime:    { type: Date },
   draftOrderMode:   { type: String, enum: ['random', 'manual'], default: 'random' },
