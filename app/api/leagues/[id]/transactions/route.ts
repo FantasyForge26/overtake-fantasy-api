@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const [draftSession, txDocs] = await Promise.all([
     DraftSession.findOne({ leagueId }).lean() as any,
-    Transaction.find({ leagueId }).lean() as any[],
+    Transaction.find({ leagueId }).lean() as unknown as any[],
   ]);
 
   // Draft picks
