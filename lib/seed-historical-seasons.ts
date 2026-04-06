@@ -29,16 +29,12 @@ async function fetchWithRetry<T>(path: string, attemptsLeft = 5): Promise<T[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Car number → driver slug mappings
-//
-// NOTE: These numbers reflect the 2026 fantasy grid numbering. Some differ
-// from real 2024/2025 car numbers (e.g. in reality #1 was Max Verstappen
-// in 2024, #4 was Lando Norris). Update if you want real historical accuracy.
+// Car number → driver slug mappings (year-specific, using real car numbers)
 // ---------------------------------------------------------------------------
 
 const CAR_TO_SLUG_2024: Record<number, string> = {
-  1:  'lando-norris',
-  3:  'max-verstappen',
+  1:  'max-verstappen',   // champion's number
+  4:  'lando-norris',
   10: 'pierre-gasly',
   11: 'sergio-perez',
   14: 'fernando-alonso',
@@ -54,11 +50,12 @@ const CAR_TO_SLUG_2024: Record<number, string> = {
   81: 'oscar-piastri',
 };
 
-// Perez (#11) retired after 2024; Bottas (#77) not retained for 2025
+// Perez and Bottas not on 2025 grid; Antonelli joins at #12
 const CAR_TO_SLUG_2025: Record<number, string> = {
-  1:  'lando-norris',
-  3:  'max-verstappen',
+  1:  'max-verstappen',
+  4:  'lando-norris',
   10: 'pierre-gasly',
+  12: 'kimi-antonelli',
   14: 'fernando-alonso',
   16: 'charles-leclerc',
   18: 'lance-stroll',
@@ -96,6 +93,7 @@ const TEAMS_2024: Record<string, string> = {
 const TEAMS_2025: Record<string, string> = {
   'lando-norris':    'McLaren',
   'max-verstappen':  'Red Bull',
+  'kimi-antonelli':  'Mercedes',
   'pierre-gasly':    'Alpine',
   'fernando-alonso': 'Aston Martin',
   'charles-leclerc': 'Ferrari',
