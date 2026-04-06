@@ -258,9 +258,12 @@ const RaceResultSchema = new Schema({
   round:         { type: Number, required: true },
   driverResults: [DriverResultSchema],
   pitCrewResults:[PitCrewResultSchema],
-  enteredBy:     { type: String },
-  enteredAt:     { type: Date },
-  calculated:    { type: Boolean, default: false },
+  enteredBy:         { type: String },
+  enteredAt:         { type: Date },
+  calculated:        { type: Boolean, default: false },
+  qualifyingScored:  { type: Boolean, default: false },
+  sprintScored:      { type: Boolean, default: false },
+  raceScored:        { type: Boolean, default: false },
 });
 
 RaceResultSchema.index({ leagueId: 1, season: 1, round: 1 }, { unique: true });
