@@ -312,6 +312,33 @@ const RaceCalendarSchema = new Schema({
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// HistoricalSeason
+// ---------------------------------------------------------------------------
+
+const HistoricalSeasonSchema = new Schema({
+  assetSlug:              { type: String, required: true },
+  assetType:              { type: String, enum: ['driver', 'principal', 'pitCrew', 'powerUnit'] },
+  season:                 { type: Number, required: true },
+  team:                   { type: String },
+  racesCompleted:         { type: Number, default: 0 },
+  wins:                   { type: Number, default: 0 },
+  podiums:                { type: Number, default: 0 },
+  pointsFinishes:         { type: Number, default: 0 },
+  dnfCount:               { type: Number, default: 0 },
+  totalPoints:            { type: Number, default: 0 },
+  avgPointsPerRace:       { type: Number, default: 0 },
+  championshipPosition:   { type: Number },
+  q3Count:                { type: Number, default: 0 },
+  qualifyingRaces:        { type: Number, default: 0 },
+  avgQualifyingPosition:  { type: Number, default: 0 },
+  avgPitStopTime:         { type: Number },
+  fastestStopCount:       { type: Number },
+  constructorPosition:    { type: Number },
+});
+
+HistoricalSeasonSchema.index({ assetSlug: 1, season: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -327,3 +354,4 @@ export const RaceResult            = mongoose.models.RaceResult            || mo
 export const Transaction           = mongoose.models.Transaction           || mongoose.model('Transaction',           TransactionSchema);
 export const PerformanceSelection  = mongoose.models.PerformanceSelection  || mongoose.model('PerformanceSelection',  PerformanceSelectionSchema);
 export const RaceCalendar          = mongoose.models.RaceCalendar          || mongoose.model('RaceCalendar',          RaceCalendarSchema);
+export const HistoricalSeason      = mongoose.models.HistoricalSeason      || mongoose.model('HistoricalSeason',      HistoricalSeasonSchema);
