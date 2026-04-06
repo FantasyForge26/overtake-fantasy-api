@@ -183,6 +183,17 @@ export function calculatePrincipalScore(driver1FinishPosition: number, driver2Fi
 // OTF rating recalculation (season-long rolling rating)
 // ---------------------------------------------------------------------------
 
+interface HistoricalSeasonForOTF {
+  season: number;
+  wins: number;
+  podiums: number;
+  racesCompleted: number;
+  q3Count: number;
+  qualifyingRaces: number;
+  dnfCount: number;
+  avgPointsPerRace: number;
+}
+
 interface AssetForOTF {
   otfBaseRating: number;
   racesCompleted: number;
@@ -191,10 +202,45 @@ interface AssetForOTF {
   age?: number;
   teamStrength: number;
   dnfCount: number;
+  historicalSeasons?: HistoricalSeasonForOTF[];
+}
+
+function calculateHistoricalScore(historicalSeasons: HistoricalSeasonForOTF[]): number | null {
+  if (!historicalSeasons.length) return null;
+
+  const WEIGHTS: Record<number, number> = { 2025: 0.6, 2024: 0.4 };
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const s of historicalSeasons) {
+    const weight = WEIGHTS[s.season];
+    if (!weight) continue;
+
+    const q3Rate     = s.qualifyingRaces > 0 ? s.q3Count / s.qualifyingRaces : 0;
+    const seasonScore = Math.min(s.wins * 3 + s.podiums * 1.5 + q3Rate * 10, 20);
+
+    weightedSum  += seasonScore * weight;
+    totalWeight  += weight;
+  }
+
+  if (totalWeight === 0) return null;
+  return weightedSum / totalWeight;
 }
 
 export function calculateOTFRating(asset: AssetForOTF): number {
-  if (asset.racesCompleted === 0) return asset.otfBaseRating;
+  const historicalScore = asset.historicalSeasons?.length
+    ? calculateHistoricalScore(asset.historicalSeasons)
+    : null;
+
+  if (asset.racesCompleted === 0) {
+    if (historicalScore !== null) {
+      // Scale historicalScore (0–20) to a 0–99 range via base rating anchor
+      const blended = 0.4 * asset.otfBaseRating + 0.6 * (historicalScore * (99 / 20));
+      return Math.min(99, Math.max(1, Math.round(blended)));
+    }
+    return asset.otfBaseRating;
+  }
 
   const performanceScore = Math.min(asset.avgPointsPerRace * 5, 50);
   const volumeScore      = Math.min(asset.totalPoints / 500, 1) * 20;
@@ -205,7 +251,13 @@ export function calculateOTFRating(asset: AssetForOTF): number {
   const reliabilityScore =
     ((asset.racesCompleted - asset.dnfCount) / asset.racesCompleted) * 10;
 
-  return Math.min(99, Math.max(1, Math.round(
-    performanceScore + volumeScore + ageBoost + teamBoost + reliabilityScore,
-  )));
+  const currentScore = performanceScore + volumeScore + ageBoost + teamBoost + reliabilityScore;
+
+  if (historicalScore !== null) {
+    const scaledHistorical = historicalScore * (99 / 20);
+    const blended = 0.7 * currentScore + 0.3 * scaledHistorical;
+    return Math.min(99, Math.max(1, Math.round(blended)));
+  }
+
+  return Math.min(99, Math.max(1, Math.round(currentScore)));
 }

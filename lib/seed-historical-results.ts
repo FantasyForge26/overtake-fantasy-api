@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { connectDB } from './db';
-import { Asset } from './models';
+import { Asset, HistoricalSeason } from './models';
 import { calculateOTFRating, calculatePitCrewScore, calculatePowerUnitScore, calculatePrincipalScore, calculateDriverQualifyingScore } from './otf-calculator';
 
 // ---------------------------------------------------------------------------
@@ -848,6 +848,43 @@ async function seedHistoricalResults() {
     console.log('  ✓ cadillac-pu updated to Ferrari');
   } else {
     console.warn('  ⚠ cadillac-pu not found');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recalculate OTF ratings using historicalSeasons data
+  // ---------------------------------------------------------------------------
+  console.log('\nRecalculating OTF ratings with historical season data...');
+
+  const allDriverAssets = await Asset.find({ assetType: 'driver', season: 2026 });
+
+  for (const asset of allDriverAssets) {
+    const historicalDocs = await HistoricalSeason.find({ assetSlug: asset.slug }).lean() as any[];
+
+    const historicalSeasons = historicalDocs.map((h: any) => ({
+      season:           h.season,
+      wins:             h.wins ?? 0,
+      podiums:          h.podiums ?? 0,
+      racesCompleted:   h.racesCompleted ?? 0,
+      q3Count:          h.q3Count ?? 0,
+      qualifyingRaces:  h.qualifyingRaces ?? 0,
+      dnfCount:         h.dnfCount ?? 0,
+      avgPointsPerRace: h.avgPointsPerRace ?? 0,
+    }));
+
+    const oldRating = asset.otfRating;
+    asset.otfRating = calculateOTFRating({
+      otfBaseRating:    asset.otfBaseRating,
+      racesCompleted:   asset.racesCompleted ?? 0,
+      avgPointsPerRace: asset.avgPointsPerRace ?? 0,
+      totalPoints:      asset.totalPoints ?? 0,
+      age:              asset.age,
+      teamStrength:     asset.teamStrength ?? 50,
+      dnfCount:         asset.dnfCount ?? 0,
+      historicalSeasons,
+    });
+
+    await asset.save();
+    console.log(`  ✓ ${asset.slug}: OTF updated from ${oldRating} to ${asset.otfRating}`);
   }
 
   console.log('\nDone.');
