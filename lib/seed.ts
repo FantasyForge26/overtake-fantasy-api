@@ -57,26 +57,37 @@ async function seed() {
     // Cadillac
     { slug: 'sergio-perez',      firstName: 'Sergio',    lastName: 'Pérez',       carNumber: 11, age: 35, otfBaseRating: 82, nationality: 'Mexican',        teamSlug: 'cadillac' },
     { slug: 'valtteri-bottas',   firstName: 'Valtteri',  lastName: 'Bottas',      carNumber: 77, age: 35, otfBaseRating: 75, nationality: 'Finnish',        teamSlug: 'cadillac' },
+    // Reserve / unavailable drivers
+    { slug: 'ayumu-iwasa',       firstName: 'Ayumu',     lastName: 'Iwasa',       carNumber: 37, age: 23, otfBaseRating: 70, nationality: 'Japanese',       teamSlug: 'reserve' },
+    { slug: 'pato-oward',        firstName: 'Pato',      lastName: "O'Ward",      carNumber: 99, age: 25, otfBaseRating: 68, nationality: 'Mexican',        teamSlug: 'reserve' },
+    { slug: 'mick-schumacher',   firstName: 'Mick',      lastName: 'Schumacher',  carNumber: 47, age: 25, otfBaseRating: 66, nationality: 'German',         teamSlug: 'reserve' },
+    { slug: 'antonio-giovinazzi',firstName: 'Antonio',   lastName: 'Giovinazzi',  carNumber: 98, age: 30, otfBaseRating: 62, nationality: 'Italian',        teamSlug: 'reserve' },
+    { slug: 'felipe-drugovich',  firstName: 'Felipe',    lastName: 'Drugovich',   carNumber: 40, age: 24, otfBaseRating: 65, nationality: 'Brazilian',      teamSlug: 'reserve' },
+    { slug: 'zak-osullivan',     firstName: 'Zak',       lastName: "O'Sullivan",  carNumber: 36, age: 22, otfBaseRating: 67, nationality: 'British',        teamSlug: 'reserve' },
+    { slug: 'pietro-fittipaldi', firstName: 'Pietro',    lastName: 'Fittipaldi',  carNumber: 51, age: 28, otfBaseRating: 60, nationality: 'Brazilian',      teamSlug: 'reserve' },
+    { slug: 'theo-pourchaire',   firstName: 'Théo',      lastName: 'Pourchaire',  carNumber: 45, age: 21, otfBaseRating: 65, nationality: 'French',         teamSlug: 'reserve' },
+    { slug: 'colton-herta',      firstName: 'Colton',    lastName: 'Herta',       carNumber: 26, age: 24, otfBaseRating: 63, nationality: 'American',       teamSlug: 'reserve' },
   ].map((d) => {
-    const t = TEAMS.find((t) => t.teamSlug === d.teamSlug)!;
+    const t = TEAMS.find((t) => t.teamSlug === d.teamSlug);
+    const isReserve = !t;
     return {
       slug: d.slug,
       assetType: 'driver',
       season: 2026,
-      isActive: true,
-      confirmed: true,
+      isActive: !isReserve,
+      confirmed: !isReserve,
       name: `${d.firstName} ${d.lastName}`,
       firstName: d.firstName,
       lastName: d.lastName,
       carNumber: d.carNumber,
       age: d.age,
       nationality: d.nationality,
-      team: t.team,
-      teamSlug: t.teamSlug,
-      teamColor: t.teamColor,
-      teamColorSecondary: t.teamColorSecondary,
-      teamStrength: t.teamStrength,
-      powerUnitSlug: t.puSlug,
+      team:                isReserve ? 'Reserve Driver' : t!.team,
+      teamSlug:            isReserve ? 'reserve'        : t!.teamSlug,
+      teamColor:           isReserve ? '#444444'        : t!.teamColor,
+      teamColorSecondary:  isReserve ? '#888888'        : t!.teamColorSecondary,
+      teamStrength:        isReserve ? 40               : t!.teamStrength,
+      powerUnitSlug:       isReserve ? null             : t!.puSlug,
       otfBaseRating: d.otfBaseRating,
       otfRating: d.otfBaseRating,
     };
@@ -97,6 +108,7 @@ async function seed() {
     { slug: 'ayao-komatsu',      firstName: 'Ayao',     lastName: 'Komatsu',    otfBaseRating: 52, nationality: 'Japanese',    teamSlug: 'haas' },
     { slug: 'flavio-briatore',   firstName: 'Flavio',   lastName: 'Briatore',   otfBaseRating: 68, nationality: 'Italian',     teamSlug: 'alpine' },
     { slug: 'graeme-lowdon',     firstName: 'Graeme',   lastName: 'Lowdon',     otfBaseRating: 45, nationality: 'British',     teamSlug: 'cadillac' },
+    { slug: 'christian-horner', firstName: 'Christian', lastName: 'Horner',    otfBaseRating: 78, nationality: 'British',     teamSlug: null },
   ];
 
   // Collect car numbers per team from drivers
@@ -107,23 +119,24 @@ async function seed() {
   }
 
   const principals = principalData.map((p) => {
-    const t = TEAMS.find((t) => t.teamSlug === p.teamSlug)!;
+    const t = p.teamSlug ? TEAMS.find((t) => t.teamSlug === p.teamSlug) : undefined;
+    const unattached = !t;
     return {
       slug: p.slug,
       assetType: 'principal',
       season: 2026,
-      isActive: true,
-      confirmed: true,
+      isActive: !unattached,
+      confirmed: !unattached,
       name: `${p.firstName} ${p.lastName}`,
       firstName: p.firstName,
       lastName: p.lastName,
       nationality: p.nationality,
-      carNumbers: teamCarNumbers[p.teamSlug] ?? [],
-      team: t.team,
-      teamSlug: t.teamSlug,
-      teamColor: t.teamColor,
-      teamColorSecondary: t.teamColorSecondary,
-      teamStrength: t.teamStrength,
+      carNumbers:          unattached ? []         : (teamCarNumbers[p.teamSlug!] ?? []),
+      team:                unattached ? 'Unattached' : t!.team,
+      teamSlug:            unattached ? 'unattached' : t!.teamSlug,
+      teamColor:           unattached ? '#444444'    : t!.teamColor,
+      teamColorSecondary:  unattached ? '#888888'    : t!.teamColorSecondary,
+      teamStrength:        unattached ? 50           : t!.teamStrength,
       otfBaseRating: p.otfBaseRating,
       otfRating: p.otfBaseRating,
     };
@@ -132,7 +145,7 @@ async function seed() {
   // ---------------------------------------------------------------------------
   // PIT CREWS — one per car (slug: [teamSlug]-pit-crew-[carNumber])
   // ---------------------------------------------------------------------------
-  const pitCrews = drivers.map((d) => {
+  const pitCrews = drivers.filter((d) => d.isActive !== false && d.teamSlug !== 'reserve').map((d) => {
     const t = TEAMS.find((t) => t.teamSlug === d.teamSlug)!;
     const otfBaseRating = Math.round(t.teamStrength / 10 + 45);
     return {
