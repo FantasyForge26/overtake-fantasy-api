@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { connectDB } from './db';
 import { HistoricalSeason } from './models';
 import { getRaceResults, getQualifyingResults, getPitStopData } from './openf1';
+import { FINISH_POINTS } from './otf-calculator';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const BASE   = 'https://api.openf1.org/v1';
@@ -124,6 +125,7 @@ interface DriverAcc {
   qualPositions:    number[];
   pitStopTimes:     number[];
   fastestStopCount: number;
+  fantasyPoints:    number;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +152,7 @@ async function seedYear(year: number): Promise<void> {
       qualPositions:    [],
       pitStopTimes:     [],
       fastestStopCount: 0,
+      fantasyPoints:    0,
     });
   }
 
@@ -210,6 +213,18 @@ async function seedYear(year: number): Promise<void> {
     const qualByNum = new Map(qualResults.map(r => [r.driverNumber, r]));
     const pitByNum  = new Map(pitData.map(p => [p.driverNumber, p]));
 
+    // Build finish and start position maps (needed for BT bonus and positions gained)
+    const finishBySlug = new Map<string, number>();
+    for (const result of raceResults) {
+      const slug = carToSlug[result.driverNumber];
+      if (slug && !result.dnf) finishBySlug.set(slug, result.position);
+    }
+    const startBySlug = new Map<string, number>();
+    for (const qual of qualResults) {
+      const slug = carToSlug[qual.driverNumber];
+      if (slug) startBySlug.set(slug, qual.position);
+    }
+
     let processed = 0;
 
     for (const result of raceResults) {
@@ -242,6 +257,38 @@ async function seedYear(year: number): Promise<void> {
         if (pit.fastestStopOverall) driver.fastestStopCount++;
       }
 
+      // Fantasy scoring
+      if (!result.dnf) {
+        const finishPos = result.position;
+        const startPos  = startBySlug.get(slug) ?? null;
+
+        // Beat teammate bonus: find a teammate (same team, different slug) in finishBySlug
+        const teammateFinish = (() => {
+          for (const [otherSlug, otherFinish] of finishBySlug) {
+            if (otherSlug !== slug && teamBySlug[otherSlug] === teamBySlug[slug]) {
+              return otherFinish;
+            }
+          }
+          return null;
+        })();
+
+        const rPts    = (FINISH_POINTS[finishPos] ?? 0) + 1;
+        const btBonus = (teammateFinish != null && finishPos < teammateFinish) ? 3 : 0;
+
+        let pgScore = 0;
+        if (startPos != null) {
+          const delta = startPos - finishPos;
+          if (delta > 0) {
+            pgScore = Math.min(delta * 2, 10);
+          } else if (delta < 0) {
+            const lost = -delta;
+            pgScore = startPos <= 10 ? -Math.min(lost * 2, 10) : -Math.min(lost, 5);
+          }
+        }
+
+        driver.fantasyPoints += rPts + btBonus + pgScore;
+      }
+
       processed++;
     }
 
@@ -259,6 +306,11 @@ async function seedYear(year: number): Promise<void> {
       ? Math.round((driver.pitStopTimes.reduce((a, b) => a + b, 0) / driver.pitStopTimes.length) * 1000) / 1000
       : undefined;
 
+    const totalPoints     = Math.round(driver.fantasyPoints * 100) / 100;
+    const avgPointsPerRace = driver.racesCompleted > 0
+      ? Math.round((totalPoints / driver.racesCompleted) * 100) / 100
+      : 0;
+
     await HistoricalSeason.findOneAndUpdate(
       { assetSlug: driver.slug, season: year },
       {
@@ -271,8 +323,8 @@ async function seedYear(year: number): Promise<void> {
         podiums:              driver.podiums,
         pointsFinishes:       driver.pointsFinishes,
         dnfCount:             driver.dnfCount,
-        totalPoints:          0,   // not calculated here — needs full race scoring
-        avgPointsPerRace:     0,
+        totalPoints,
+        avgPointsPerRace,
         q3Count:              driver.q3Count,
         qualifyingRaces:      driver.qualifyingRaces,
         avgQualifyingPosition,
@@ -285,7 +337,7 @@ async function seedYear(year: number): Promise<void> {
     console.log(
       `  ✓ ${driver.slug} (${year}): ` +
       `${driver.racesCompleted} races, ${driver.wins}W ${driver.podiums}P, ` +
-      `q3=${driver.q3Count}, dnf=${driver.dnfCount}`,
+      `q3=${driver.q3Count}, dnf=${driver.dnfCount}, pts=${totalPoints}`,
     );
   }
 }
