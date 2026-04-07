@@ -19,15 +19,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
   }
 
-  const prompt = `Flat 2D vector logo for F1 team called ${teamName.trim()}. Style: exactly like Alpine, Williams, McLaren, Haas or Red Bull Racing F1 team logos — flat corporate identity, white background, bold typography, simple geometric icon or lettermark, no gradients, no 3D effects, no photographs, no realistic rendering. Colors: Primary ${primaryColor ?? ''}, Secondary ${secondaryColor ?? ''}, Accent ${accentColor ?? ''}. Clean SVG-style flat design. Professional motorsport brand mark.`;
+  const prompt = `Flat 2D vector logo for F1 team called ${teamName.trim()}. Style: exactly like Alpine, Williams, McLaren, Haas or Red Bull Racing F1 team logos — flat corporate identity, white background, bold typography, simple geometric icon or lettermark, no gradients, no 3D effects, no photographs, no realistic rendering. Colors: Primary ${primaryColor ?? ''}, Secondary ${secondaryColor ?? ''}, Accent ${accentColor ?? ''}. Clean SVG-style flat design. Professional motorsport brand mark. Transparent background, no background, isolated logo on transparent background.`;
 
-  const form = new FormData();
-  form.append('prompt', prompt);
-  form.append('output_format', 'png');
-  form.append('aspect_ratio', '1:1');
+  // Step 1: Generate the logo
+  const genForm = new FormData();
+  genForm.append('prompt', prompt);
+  genForm.append('output_format', 'png');
+  genForm.append('aspect_ratio', '1:1');
+
+  let imageBuffer: ArrayBuffer;
 
   try {
-    const stabilityRes = await fetch(
+    const genRes = await fetch(
       'https://api.stability.ai/v2beta/stable-image/generate/core',
       {
         method: 'POST',
@@ -35,25 +38,59 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${apiKey}`,
           Accept: 'image/*',
         },
-        body: form,
+        body: genForm,
       },
     );
 
-    if (!stabilityRes.ok) {
-      const errText = await stabilityRes.text();
-      console.error('[generate-logo] Stability error:', stabilityRes.status, errText);
+    if (!genRes.ok) {
+      const errText = await genRes.text();
+      console.error('[generate-logo] Stability generate error:', genRes.status, errText);
       return NextResponse.json(
-        { error: `Image generation failed (${stabilityRes.status})` },
+        { error: `Image generation failed (${genRes.status})` },
         { status: 502 },
       );
     }
 
-    const buffer = await stabilityRes.arrayBuffer();
-    const imageBase64 = Buffer.from(buffer).toString('base64');
+    imageBuffer = await genRes.arrayBuffer();
+  } catch (err: any) {
+    console.error('[generate-logo] generate fetch error:', err?.message ?? err);
+    return NextResponse.json({ error: 'Logo generation failed' }, { status: 500 });
+  }
 
+  // Step 2: Remove background to get transparent PNG
+  try {
+    const imageBlob = new Blob([imageBuffer], { type: 'image/png' });
+    const bgForm = new FormData();
+    bgForm.append('image', imageBlob, 'logo.png');
+    bgForm.append('output_format', 'png');
+
+    const bgRes = await fetch(
+      'https://api.stability.ai/v2beta/stable-image/edit/remove-background',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'image/*',
+        },
+        body: bgForm,
+      },
+    );
+
+    if (!bgRes.ok) {
+      const errText = await bgRes.text();
+      console.error('[generate-logo] Stability remove-background error:', bgRes.status, errText);
+      // Fall back to the original image without transparency
+      const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+      return NextResponse.json({ imageBase64 });
+    }
+
+    const transparentBuffer = await bgRes.arrayBuffer();
+    const imageBase64 = Buffer.from(transparentBuffer).toString('base64');
     return NextResponse.json({ imageBase64 });
   } catch (err: any) {
-    console.error('[generate-logo] fetch error:', err?.message ?? err);
-    return NextResponse.json({ error: 'Logo generation failed' }, { status: 500 });
+    console.error('[generate-logo] remove-background fetch error:', err?.message ?? err);
+    // Fall back to the original image without transparency
+    const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+    return NextResponse.json({ imageBase64 });
   }
 }
