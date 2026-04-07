@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 
-const ASSET_FIELDS = 'name team teamColor teamColorSecondary assetType carNumber nationality slug';
+const ASSET_FIELDS = 'name team teamColor teamColorSecondary assetType carNumber nationality slug illustrationUrl otfRating';
 
 export async function GET(
   req: NextRequest,
