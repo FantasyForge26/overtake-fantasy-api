@@ -19,11 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
   }
 
-  const colorClause = (primaryColor && secondaryColor && accentColor)
-    ? ` Primary color: ${primaryColor}, Secondary color: ${secondaryColor}, Accent color: ${accentColor}.`
-    : '';
-
-  const prompt = `Professional F1 racing team logo for ${teamName.trim()}, think of classic and current F1 team logos and create a logo that will stand out in the F1 paddock today. Bold, iconic, modern racing design with strong visual identity.${colorClause}`;
+  const prompt = `Professional Formula 1 team logo for ${teamName.trim()}. The team's official colors are: Primary (${primaryColor ?? ''}), Secondary (${secondaryColor ?? ''}), and Accent (${accentColor ?? ''}). Design a bold, iconic logo that would stand out on the modern F1 grid alongside teams like Ferrari, McLaren, and Red Bull. The logo must prominently and accurately use these exact colors. Style should be clean, minimal, and corporate with a strong motorsport identity. Include only the team name as text—no additional wording. Ensure the design is modern, professional, and suitable for use on cars, uniforms, and digital platforms.`;
 
   const form = new FormData();
   form.append('prompt', prompt);
