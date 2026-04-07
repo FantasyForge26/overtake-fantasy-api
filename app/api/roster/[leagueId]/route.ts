@@ -39,3 +39,46 @@ export async function GET(
 
   return NextResponse.json(roster);
 }
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ leagueId: string }> },
+) {
+  const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const userId = (session.user as any).id as string;
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { leagueId } = await params;
+  const body = await req.json();
+  const { teamName } = body;
+
+  if (!teamName || typeof teamName !== 'string' || !teamName.trim()) {
+    return NextResponse.json({ error: 'teamName is required' }, { status: 400 });
+  }
+
+  await connectDB();
+
+  const roster = await Roster.findOneAndUpdate(
+    { leagueId, userId },
+    { teamName: teamName.trim(), updatedAt: new Date() },
+    { new: true },
+  )
+    .populate('driver1AssetId', ASSET_FIELDS)
+    .populate('driver2AssetId', ASSET_FIELDS)
+    .populate('principalAssetId', ASSET_FIELDS)
+    .populate('pitCrew1AssetId', ASSET_FIELDS)
+    .populate('pitCrew2AssetId', ASSET_FIELDS)
+    .populate('powerUnitAssetId', ASSET_FIELDS);
+
+  if (!roster) {
+    return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
+  }
+
+  return NextResponse.json(roster);
+}
