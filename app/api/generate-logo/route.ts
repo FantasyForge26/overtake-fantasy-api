@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
   }
 
-  const prompt = `Professional F1 racing team logo for ${teamName.trim()}, bold geometric design, dark background, neon colors, cyberpunk style, high quality emblem`;
+  const prompt = `Professional F1 racing team logo for ${teamName.trim()}, think of classic and current F1 team logos and create a logo that will stand out in the F1 paddock today. Bold, iconic, modern racing design with strong visual identity.`;
 
   const form = new FormData();
   form.append('prompt', prompt);
