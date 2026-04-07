@@ -239,14 +239,15 @@ const TransactionSchema = new Schema({
 // ---------------------------------------------------------------------------
 
 const DriverResultSchema = new Schema({
-  driverSlug:         { type: String, required: true },
-  startPosition:      { type: Number },
-  finishPosition:     { type: Number },
-  fastestLap:         { type: Boolean, default: false },
-  speedTrapViolation: { type: Boolean, default: false },
-  notClassified:      { type: Boolean, default: false },
-  dnf:                { type: Boolean, default: false },
-  penalizedSeconds:   { type: Number, default: 0 },
+  driverSlug:          { type: String, required: true },
+  startPosition:       { type: Number },
+  finishPosition:      { type: Number },
+  qualifyingPosition:  { type: Number },
+  fastestLap:          { type: Boolean, default: false },
+  speedTrapViolation:  { type: Boolean, default: false },
+  notClassified:       { type: Boolean, default: false },
+  dnf:                 { type: Boolean, default: false },
+  penalizedSeconds:    { type: Number, default: 0 },
 }, { _id: false });
 
 const PitCrewResultSchema = new Schema({
