@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
   }
 
-  const prompt = `Professional F1 racing team logo for ${teamName.trim()}. The team's official colors are: Primary: ${primaryColor ?? ''}, Secondary: ${secondaryColor ?? ''}, Accent: ${accentColor ?? ''}. Flat, non-3D, modern motorsport corporate logo focused on typography and brand identity. Must prominently feature these exact colors. Clean, professional racing team identity that stands out in the F1 paddock today.`;
+  const prompt = `Flat 2D vector logo for F1 team called ${teamName.trim()}. Style: exactly like Alpine, Williams, McLaren, Haas or Red Bull Racing F1 team logos — flat corporate identity, white background, bold typography, simple geometric icon or lettermark, no gradients, no 3D effects, no photographs, no realistic rendering. Colors: Primary ${primaryColor ?? ''}, Secondary ${secondaryColor ?? ''}, Accent ${accentColor ?? ''}. Clean SVG-style flat design. Professional motorsport brand mark.`;
 
   const form = new FormData();
   form.append('prompt', prompt);
