@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { teamName } = await req.json();
+  const { teamName, primaryColor, secondaryColor, accentColor } = await req.json();
   if (!teamName || typeof teamName !== 'string' || !teamName.trim()) {
     return NextResponse.json({ error: 'teamName is required' }, { status: 400 });
   }
@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
   }
 
-  const prompt = `Professional F1 racing team logo for ${teamName.trim()}, think of classic and current F1 team logos and create a logo that will stand out in the F1 paddock today. Bold, iconic, modern racing design with strong visual identity.`;
+  const colorClause = (primaryColor && secondaryColor && accentColor)
+    ? ` Primary color: ${primaryColor}, Secondary color: ${secondaryColor}, Accent color: ${accentColor}.`
+    : '';
+
+  const prompt = `Professional F1 racing team logo for ${teamName.trim()}, think of classic and current F1 team logos and create a logo that will stand out in the F1 paddock today. Bold, iconic, modern racing design with strong visual identity.${colorClause}`;
 
   const form = new FormData();
   form.append('prompt', prompt);

@@ -56,7 +56,7 @@ export async function PATCH(
 
   const { leagueId } = await params;
   const body = await req.json();
-  const { teamName } = body;
+  const { teamName, teamPrimaryColor, teamSecondaryColor, teamAccentColor } = body;
 
   if (!teamName || typeof teamName !== 'string' || !teamName.trim()) {
     return NextResponse.json({ error: 'teamName is required' }, { status: 400 });
@@ -64,9 +64,14 @@ export async function PATCH(
 
   await connectDB();
 
+  const update: Record<string, any> = { teamName: teamName.trim(), updatedAt: new Date() };
+  if (teamPrimaryColor !== undefined)   update.teamPrimaryColor   = teamPrimaryColor;
+  if (teamSecondaryColor !== undefined) update.teamSecondaryColor = teamSecondaryColor;
+  if (teamAccentColor !== undefined)    update.teamAccentColor    = teamAccentColor;
+
   const roster = await Roster.findOneAndUpdate(
     { leagueId, userId },
-    { teamName: teamName.trim(), updatedAt: new Date() },
+    update,
     { new: true },
   )
     .populate('driver1AssetId', ASSET_FIELDS)
