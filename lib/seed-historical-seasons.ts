@@ -1,11 +1,21 @@
 import 'dotenv/config';
 import { connectDB } from './db';
-import { HistoricalSeason } from './models';
+import { HistoricalSeason, HistoricalRaceBreakdown } from './models';
 import { getRaceResults, getQualifyingResults, getPitStopData } from './openf1';
 import { FINISH_POINTS } from './otf-calculator';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const BASE   = 'https://api.openf1.org/v1';
+
+const COUNTRY_FLAGS: Record<string, string> = {
+  'Australia': '🇦🇺', 'China': '🇨🇳', 'Japan': '🇯🇵',
+  'Bahrain': '🇧🇭', 'Saudi Arabia': '🇸🇦', 'United States': '🇺🇸',
+  'Canada': '🇨🇦', 'Monaco': '🇲🇨', 'Spain': '🇪🇸',
+  'Austria': '🇦🇹', 'United Kingdom': '🇬🇧', 'Belgium': '🇧🇪',
+  'Hungary': '🇭🇺', 'Netherlands': '🇳🇱', 'Italy': '🇮🇹',
+  'Azerbaijan': '🇦🇿', 'Singapore': '🇸🇬', 'Mexico': '🇲🇽',
+  'Brazil': '🇧🇷', 'Qatar': '🇶🇦', 'Abu Dhabi': '🇦🇪',
+};
 
 // ---------------------------------------------------------------------------
 // Local raw fetcher — used only for meetings and session-key lookups.
@@ -112,6 +122,19 @@ const TEAMS_2025: Record<string, string> = {
 // Per-driver accumulator
 // ---------------------------------------------------------------------------
 
+interface RaceRow {
+  round:     number;
+  flag:      string;
+  shortName: string;
+  qPos:      number | null;
+  qStage:    'Q1' | 'Q2' | 'Q3' | null;
+  rPts:      number;
+  btBonus:   number;
+  pgScore:   number;
+  tot:       number;
+  dnf:       boolean;
+}
+
 interface DriverAcc {
   slug:             string;
   team:             string;
@@ -126,6 +149,7 @@ interface DriverAcc {
   pitStopTimes:     number[];
   fastestStopCount: number;
   fantasyPoints:    number;
+  raceRows:         RaceRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +177,7 @@ async function seedYear(year: number): Promise<void> {
       pitStopTimes:     [],
       fastestStopCount: 0,
       fantasyPoints:    0,
+      raceRows:         [],
     });
   }
 
@@ -210,6 +235,10 @@ async function seedYear(year: number): Promise<void> {
       console.warn(`  ⚠ pit stop data unavailable for round ${round}: ${err.message}`);
     }
 
+    const country   = meeting.country_name ?? meeting.location ?? `R${round}`;
+    const flag      = COUNTRY_FLAGS[country] ?? '🏁';
+    const shortName = country;
+
     const qualByNum = new Map(qualResults.map(r => [r.driverNumber, r]));
     const pitByNum  = new Map(pitData.map(p => [p.driverNumber, p]));
 
@@ -258,16 +287,18 @@ async function seedYear(year: number): Promise<void> {
       }
 
       // Fantasy scoring
-      if (!result.dnf) {
+      const qPos   = qual?.position ?? null;
+      const qStage = qual?.qualifyingRound ?? null;
+
+      if (result.dnf) {
+        driver.raceRows.push({ round, flag, shortName, qPos, qStage, rPts: 0, btBonus: 0, pgScore: 0, tot: 0, dnf: true });
+      } else {
         const finishPos = result.position;
         const startPos  = startBySlug.get(slug) ?? null;
 
-        // Beat teammate bonus: find a teammate (same team, different slug) in finishBySlug
         const teammateFinish = (() => {
           for (const [otherSlug, otherFinish] of finishBySlug) {
-            if (otherSlug !== slug && teamBySlug[otherSlug] === teamBySlug[slug]) {
-              return otherFinish;
-            }
+            if (otherSlug !== slug && teamBySlug[otherSlug] === teamBySlug[slug]) return otherFinish;
           }
           return null;
         })();
@@ -286,7 +317,9 @@ async function seedYear(year: number): Promise<void> {
           }
         }
 
-        driver.fantasyPoints += rPts + btBonus + pgScore;
+        const tot = rPts + btBonus + pgScore;
+        driver.fantasyPoints += tot;
+        driver.raceRows.push({ round, flag, shortName, qPos, qStage, rPts, btBonus, pgScore, tot, dnf: false });
       }
 
       processed++;
@@ -334,6 +367,30 @@ async function seedYear(year: number): Promise<void> {
       { upsert: true, new: true },
     );
 
+    // Save per-race breakdown documents
+    for (const row of driver.raceRows) {
+      await HistoricalRaceBreakdown.findOneAndUpdate(
+        { assetSlug: driver.slug, season: year, round: row.round },
+        {
+          assetSlug: driver.slug,
+          season:    year,
+          round:     row.round,
+          flag:      row.flag,
+          shortName: row.shortName,
+          qPos:      row.qPos,
+          qStage:    row.qStage,
+          qPts:      null,
+          rPts:      row.rPts,
+          flBonus:   0,
+          btBonus:   row.btBonus,
+          pgScore:   row.pgScore,
+          tot:       row.tot,
+          dnf:       row.dnf,
+        },
+        { upsert: true, new: true },
+      );
+    }
+
     console.log(
       `  ✓ ${driver.slug} (${year}): ` +
       `${driver.racesCompleted} races, ${driver.wins}W ${driver.podiums}P, ` +
@@ -352,6 +409,10 @@ async function main() {
   console.log('Deleting existing HistoricalSeason documents…');
   const { deletedCount } = await HistoricalSeason.deleteMany({});
   console.log(`  ✓ deleted ${deletedCount} documents`);
+
+  console.log('Deleting existing HistoricalRaceBreakdown documents…');
+  const { deletedCount: brkDeleted } = await HistoricalRaceBreakdown.deleteMany({});
+  console.log(`  ✓ deleted ${brkDeleted} documents`);
 
   for (const year of [2024, 2025]) {
     await seedYear(year);
