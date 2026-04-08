@@ -130,7 +130,6 @@ export async function GET(req: NextRequest) {
   const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).lean();
 
   const driverBySlug   = new Map<string, any>(allAssets.filter(a => a.assetType === 'driver').map(a => [a.slug, a]));
-  const pitCrewBySlug  = new Map<string, any>(allAssets.filter(a => a.assetType === 'pitCrew').map(a => [a.slug, a]));
   const puBySlug       = new Map<string, any>(allAssets.filter(a => a.assetType === 'powerUnit').map(a => [a.slug, a]));
 
   // teamSlug → both drivers (for teammate lookups and principal/PU scoring)
@@ -365,6 +364,7 @@ export async function GET(req: NextRequest) {
         pitCrewResults:  pitCrewResultDocs,
         enteredAt:       new Date(),
         calculated:      true,
+        raceScored:      true,
       },
       { upsert: true },
     );
