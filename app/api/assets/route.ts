@@ -16,12 +16,14 @@ export async function GET(req: NextRequest) {
   const season             = parseInt(searchParams.get('season') ?? '2026', 10);
   const teamSlug           = searchParams.get('teamSlug');
   const includeUnconfirmed = searchParams.get('includeUnconfirmed') === 'true';
+  const search             = searchParams.get('search');
 
   const filter: Record<string, unknown> = { season };
 
   if (assetType) filter.assetType = assetType;
   if (teamSlug)  filter.teamSlug  = teamSlug;
   if (!includeUnconfirmed) filter.confirmed = true;
+  if (search) filter.name = { $regex: search, $options: 'i' };
 
   await connectDB();
 

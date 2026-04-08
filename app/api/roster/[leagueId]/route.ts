@@ -22,10 +22,11 @@ export async function GET(
   }
 
   const { leagueId } = await params;
+  const targetUserId = req.nextUrl.searchParams.get('userId') ?? userId;
 
   await connectDB();
 
-  const roster = await Roster.findOne({ leagueId, userId })
+  const roster = await Roster.findOne({ leagueId, userId: targetUserId })
     .populate('driver1AssetId', ASSET_FIELDS)
     .populate('driver2AssetId', ASSET_FIELDS)
     .populate('principalAssetId', ASSET_FIELDS)
