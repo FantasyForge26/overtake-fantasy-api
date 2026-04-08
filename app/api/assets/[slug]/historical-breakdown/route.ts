@@ -66,6 +66,13 @@ export async function GET(
     driver2Pos:  r.driver2Pos ?? null,
     driver1Name: r.driver1Name ?? null,
     driver2Name: r.driver2Name ?? null,
+    stopCount:         r.stopCount         ?? null,
+    avgStopTime:       r.avgStopTime       ?? null,
+    fastestStop:       r.fastestStop       ?? null,
+    wasOverallFastest: r.wasOverallFastest ?? false,
+    stop1Time:         r.stop1Time         ?? null,
+    stop2Time:         r.stop2Time         ?? null,
+    stop3Time:         r.stop3Time         ?? null,
   }));
 
   return NextResponse.json({ rows: normRows, totals, qCounts, season });

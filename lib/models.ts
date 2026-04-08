@@ -366,6 +366,14 @@ const HistoricalRaceBreakdownSchema = new Schema({
   driver2Pos:  { type: Number },
   driver1Name: { type: String },
   driver2Name: { type: String },
+  // pitCrew-specific: per-race stop details
+  stopCount:        { type: Number },
+  avgStopTime:      { type: Number },
+  fastestStop:      { type: Number },
+  wasOverallFastest:{ type: Boolean },
+  stop1Time:        { type: Number },
+  stop2Time:        { type: Number },
+  stop3Time:        { type: Number },
 });
 
 HistoricalRaceBreakdownSchema.index({ assetSlug: 1, season: 1, round: 1 }, { unique: true });

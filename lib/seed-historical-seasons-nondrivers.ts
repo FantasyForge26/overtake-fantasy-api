@@ -375,7 +375,12 @@ async function seedPitCrews(
 ): Promise<void> {
   console.log(`\n── Pit Crews ${year} ──`);
 
-  const acc: Record<string, { team: string; races: number; totalPoints: number; fastestStopCount: number; stopTimes: number[]; rows: { round: number; flag: string; shortName: string; rPts: number; flBonus: number; tot: number }[] }> = {};
+  type PitCrewRow = {
+    round: number; flag: string; shortName: string; rPts: number; flBonus: number; tot: number;
+    stopCount: number; avgStopTime: number; fastestStop: number; wasOverallFastest: boolean;
+    stop1Time?: number; stop2Time?: number; stop3Time?: number;
+  };
+  const acc: Record<string, { team: string; races: number; totalPoints: number; fastestStopCount: number; stopTimes: number[]; rows: PitCrewRow[] }> = {};
   for (const [slug, team] of Object.entries(PIT_CREW_TO_TEAM)) {
     acc[slug] = { team, races: 0, totalPoints: 0, fastestStopCount: 0, stopTimes: [], rows: [] };
   }
@@ -437,7 +442,8 @@ async function seedPitCrews(
       if (!teamBestStop[data.team]) continue;
 
       data.races++;
-      data.stopTimes.push(...(teamAllStops[data.team] ?? []));
+      const teamStops = teamAllStops[data.team] ?? [];
+      data.stopTimes.push(...teamStops);
 
       const fastestRank = fastestRanking.indexOf(data.team) + 1;
       const avgRank = avgRanking.indexOf(data.team) + 1;
@@ -447,7 +453,18 @@ async function seedPitCrews(
       const isFastest = fastestRank === 1;
       if (isFastest) data.fastestStopCount++;
 
-      data.rows.push({ round, flag, shortName, rPts: pts, flBonus: isFastest ? 1 : 0, tot: pts });
+      const stopCount = teamStops.length;
+      const avgStopTime = stopCount > 0 ? Math.round((teamStops.reduce((a, b) => a + b, 0) / stopCount) * 1000) / 1000 : 0;
+      const fastestStop = stopCount > 0 ? Math.min(...teamStops) : 0;
+      const sorted = [...teamStops].sort((a, b) => a - b);
+
+      data.rows.push({
+        round, flag, shortName, rPts: pts, flBonus: isFastest ? 1 : 0, tot: pts,
+        stopCount, avgStopTime, fastestStop, wasOverallFastest: isFastest,
+        ...(sorted[0] !== undefined && { stop1Time: sorted[0] }),
+        ...(sorted[1] !== undefined && { stop2Time: sorted[1] }),
+        ...(sorted[2] !== undefined && { stop3Time: sorted[2] }),
+      });
     }
 
     console.log(`  ✓ Round ${round}: ${teamsWithData.length} crews with data`);
@@ -480,7 +497,18 @@ async function seedPitCrews(
     for (const row of data.rows) {
       await HistoricalRaceBreakdown.findOneAndUpdate(
         { assetSlug: slug, season: year, round: row.round },
-        { assetSlug: slug, season: year, round: row.round, flag: row.flag, shortName: row.shortName, rPts: row.rPts, flBonus: row.flBonus, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false },
+        {
+          assetSlug: slug, season: year, round: row.round,
+          flag: row.flag, shortName: row.shortName,
+          rPts: row.rPts, flBonus: row.flBonus, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false,
+          stopCount: row.stopCount,
+          avgStopTime: row.avgStopTime,
+          fastestStop: row.fastestStop,
+          wasOverallFastest: row.wasOverallFastest,
+          ...(row.stop1Time !== undefined && { stop1Time: row.stop1Time }),
+          ...(row.stop2Time !== undefined && { stop2Time: row.stop2Time }),
+          ...(row.stop3Time !== undefined && { stop3Time: row.stop3Time }),
+        },
         { upsert: true, new: true },
       );
     }
