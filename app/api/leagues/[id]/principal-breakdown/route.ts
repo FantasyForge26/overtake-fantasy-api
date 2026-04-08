@@ -51,10 +51,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   for (const c of calendar) calByRound[c.round] = c;
 
   // All scored race rounds for this league
-  const raceResults = await RaceResult.find({ leagueId, season: 2026, raceScored: true })
-    .sort({ round: 1 })
-    .lean() as any[];
-  console.log('[principal-breakdown] raceResults found:', raceResults.length);
+  const allDocs = await RaceResult.find({ leagueId, season: 2026 }).sort({ round: 1 }).lean() as any[];
+  console.log('[principal-breakdown] all RaceResult docs (any raceScored):', allDocs.length, allDocs.map((r: any) => ({ round: r.round, raceScored: r.raceScored, calculated: r.calculated, driverResultsCount: (r.driverResults ?? []).length })));
+  const raceResults = allDocs.filter((r: any) => r.raceScored);
+  console.log('[principal-breakdown] raceResults found (raceScored=true):', raceResults.length);
   if (raceResults.length > 0) {
     console.log('[principal-breakdown] first raceResult driverResults:', JSON.stringify((raceResults[0].driverResults ?? []).map((d: any) => d.driverSlug)));
   }
