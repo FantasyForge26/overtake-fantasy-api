@@ -31,11 +31,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!principal) return NextResponse.json({ error: 'Principal not found' }, { status: 404 });
 
   const teamSlug: string = principal.teamSlug;
+  console.log(`[principal-breakdown] leagueId="${leagueId}" slug="${slug}" teamSlug="${teamSlug}"`);
 
   // Find both drivers for this team
   const teamDrivers = await Asset.find({ teamSlug, assetType: 'driver' }).lean() as any[];
   const driver1 = teamDrivers[0] ?? null;
   const driver2 = teamDrivers[1] ?? null;
+  console.log(`[principal-breakdown] drivers found: ${teamDrivers.length} — d1="${driver1?.slug ?? 'none'}" d2="${driver2?.slug ?? 'none'}"`);
 
   // Build slug → last name map
   const nameMap: Record<string, string> = {};
@@ -52,6 +54,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const raceResults = await RaceResult.find({ leagueId, season: 2026, raceScored: true })
     .sort({ round: 1 })
     .lean() as any[];
+  console.log('[principal-breakdown] raceResults found:', raceResults.length);
+  if (raceResults.length > 0) {
+    console.log('[principal-breakdown] first raceResult driverResults:', JSON.stringify((raceResults[0].driverResults ?? []).map((d: any) => d.driverSlug)));
+  }
 
   const rows: any[] = [];
 
