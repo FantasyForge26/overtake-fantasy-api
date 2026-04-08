@@ -366,6 +366,25 @@ const HistoricalRaceBreakdownSchema = new Schema({
 HistoricalRaceBreakdownSchema.index({ assetSlug: 1, season: 1, round: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// ChatMessage
+// ---------------------------------------------------------------------------
+
+const ChatMessageSchema = new Schema({
+  leagueId:     { type: String, required: true },
+  userId:       { type: String, required: true },
+  userName:     { type: String, required: true },
+  userInitials: { type: String, required: true },
+  message:      { type: String, default: '' },
+  type:         { type: String, enum: ['text', 'asset'], default: 'text' },
+  assetId:      { type: String },
+  assetName:    { type: String },
+  assetOtf:     { type: Number },
+  reactions:    { type: Map, of: [String], default: {} },
+}, { timestamps: true });
+
+ChatMessageSchema.index({ leagueId: 1, createdAt: 1 });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -383,3 +402,4 @@ export const PerformanceSelection  = mongoose.models.PerformanceSelection  || mo
 export const RaceCalendar          = mongoose.models.RaceCalendar          || mongoose.model('RaceCalendar',          RaceCalendarSchema);
 export const HistoricalSeason         = mongoose.models.HistoricalSeason         || mongoose.model('HistoricalSeason',         HistoricalSeasonSchema);
 export const HistoricalRaceBreakdown  = mongoose.models.HistoricalRaceBreakdown  || mongoose.model('HistoricalRaceBreakdown',  HistoricalRaceBreakdownSchema);
+export const ChatMessage              = mongoose.models.ChatMessage              || mongoose.model('ChatMessage',              ChatMessageSchema);
