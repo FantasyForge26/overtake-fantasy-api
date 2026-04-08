@@ -375,10 +375,11 @@ const ChatMessageSchema = new Schema({
   userName:     { type: String, required: true },
   userInitials: { type: String, required: true },
   message:      { type: String, default: '' },
-  type:         { type: String, enum: ['text', 'asset'], default: 'text' },
+  type:         { type: String, enum: ['text', 'asset', 'gif'], default: 'text' },
   assetId:      { type: String },
   assetName:    { type: String },
   assetOtf:     { type: Number },
+  gifUrl:       { type: String },
   reactions:    { type: Map, of: [String], default: {} },
 }, { timestamps: true });
 

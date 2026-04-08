@@ -29,6 +29,7 @@ function serializeMessage(doc: any) {
     assetId:      doc.assetId,
     assetName:    doc.assetName,
     assetOtf:     doc.assetOtf,
+    gifUrl:       doc.gifUrl,
     reactions,
     createdAt:    doc.createdAt,
   };
@@ -53,9 +54,10 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const { id: leagueId } = await params;
   const body = await req.json();
-  const { message, type = 'text', assetId, assetName, assetOtf } = body;
+  const { message, type = 'text', assetId, assetName, assetOtf, gifUrl } = body;
 
   if (!message && type === 'text') return NextResponse.json({ error: 'message is required' }, { status: 400 });
+  if (!gifUrl && type === 'gif') return NextResponse.json({ error: 'gifUrl is required for gif type' }, { status: 400 });
 
   const user = session.user as any;
   const userId = user.id ?? user._id ?? user.sub ?? '';
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     assetId,
     assetName,
     assetOtf,
+    gifUrl,
     reactions: {},
   });
 
