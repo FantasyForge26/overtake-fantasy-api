@@ -355,12 +355,17 @@ const HistoricalRaceBreakdownSchema = new Schema({
   qPos:      { type: Number },
   qStage:    { type: String, enum: ['Q1', 'Q2', 'Q3'] },
   qPts:      { type: Number },
-  rPts:      { type: Number, default: 0 },
-  flBonus:   { type: Number, default: 0 },
-  btBonus:   { type: Number, default: 0 },
-  pgScore:   { type: Number, default: 0 },
-  tot:       { type: Number, default: 0 },
-  dnf:       { type: Boolean, default: false },
+  rPts:        { type: Number, default: 0 },
+  flBonus:     { type: Number, default: 0 },
+  btBonus:     { type: Number, default: 0 },
+  pgScore:     { type: Number, default: 0 },
+  tot:         { type: Number, default: 0 },
+  dnf:         { type: Boolean, default: false },
+  // principal-specific: driver finish positions
+  driver1Pos:  { type: Number },
+  driver2Pos:  { type: Number },
+  driver1Name: { type: String },
+  driver2Name: { type: String },
 });
 
 HistoricalRaceBreakdownSchema.index({ assetSlug: 1, season: 1, round: 1 }, { unique: true });

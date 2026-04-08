@@ -18,5 +18,7 @@ export async function GET(
 
   const history = await HistoricalSeason.find({ assetSlug: slug }).sort({ season: -1 });
 
+  console.log(`[history] slug="${slug}" found=${history.length} docs`, history.map((h: any) => ({ season: h.season, assetType: h.assetType, totalPoints: h.totalPoints })));
+
   return NextResponse.json(history);
 }

@@ -50,18 +50,22 @@ export async function GET(
 
   // Normalise field names to match what the client expects (tot → total)
   const normRows = rows.map(r => ({
-    round:     r.round,
-    flag:      r.flag ?? '🏁',
-    shortName: r.shortName ?? `R${r.round}`,
-    qPos:      r.qPos ?? null,
-    qStage:    r.qStage ?? null,
-    qPts:      r.qPts ?? null,
-    rPts:      r.rPts ?? 0,
-    flBonus:   r.flBonus ?? 0,
-    btBonus:   r.btBonus ?? 0,
-    pgScore:   r.pgScore ?? 0,
-    total:     r.tot ?? 0,
-    dnf:       r.dnf ?? false,
+    round:       r.round,
+    flag:        r.flag ?? '🏁',
+    shortName:   r.shortName ?? `R${r.round}`,
+    qPos:        r.qPos ?? null,
+    qStage:      r.qStage ?? null,
+    qPts:        r.qPts ?? null,
+    rPts:        r.rPts ?? 0,
+    flBonus:     r.flBonus ?? 0,
+    btBonus:     r.btBonus ?? 0,
+    pgScore:     r.pgScore ?? 0,
+    total:       r.tot ?? 0,
+    dnf:         r.dnf ?? false,
+    driver1Pos:  r.driver1Pos ?? null,
+    driver2Pos:  r.driver2Pos ?? null,
+    driver1Name: r.driver1Name ?? null,
+    driver2Name: r.driver2Name ?? null,
   }));
 
   return NextResponse.json({ rows: normRows, totals, qCounts, season });
