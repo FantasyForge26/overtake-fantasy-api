@@ -177,10 +177,16 @@ export async function getQualifyingResults(
     });
 }
 
+// Approximate pit lane transit time subtracted from pit_duration to get
+// stationary stop time. Stops outside [10, 30]s pit_duration are data errors.
+const PIT_LANE_TRANSIT_SECONDS = 11;
+
 /**
  * Returns pit stop data per driver for the session.
- * Uses pit_duration for individual stop times.
- * fastestStopOverall marks the driver who recorded the single fastest stop.
+ * Converts pit_duration → stationary stop time by subtracting the pit lane
+ * transit constant. Filters out nulls and obvious data errors (< 10s or > 30s).
+ * All stop times are rounded to 2 decimal places.
+ * fastestStopOverall marks the driver with the single fastest stationary stop.
  */
 export async function getPitStopData(
   sessionKey: number,
@@ -191,12 +197,14 @@ export async function getPitStopData(
   const byDriver = new Map<number, number[]>();
   for (const p of pits) {
     if (p.pit_duration == null) continue;
+    if (p.pit_duration < 10 || p.pit_duration > 30) continue;
+    const stationaryTime = Math.round((p.pit_duration - PIT_LANE_TRANSIT_SECONDS) * 100) / 100;
     const stops = byDriver.get(p.driver_number) ?? [];
-    stops.push(p.pit_duration);
+    stops.push(stationaryTime);
     byDriver.set(p.driver_number, stops);
   }
 
-  // Driver with the globally fastest single stop
+  // Driver with the globally fastest single stationary stop
   let fastestTime = Infinity;
   let fastestDriver = -1;
   for (const [driverNumber, stops] of byDriver.entries()) {
