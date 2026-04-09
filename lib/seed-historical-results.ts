@@ -492,9 +492,9 @@ async function seedHistoricalResults() {
   ];
 
   for (const pu of puStats) {
-    const r1pts = calculatePowerUnitScore(pu.r1avg);
-    const r2pts = calculatePowerUnitScore(pu.r2avg);
-    const r3pts = calculatePowerUnitScore(pu.r3avg);
+    const r1pts = calculatePowerUnitScore([pu.r1avg]);
+    const r2pts = calculatePowerUnitScore([pu.r2avg]);
+    const r3pts = calculatePowerUnitScore([pu.r3avg]);
     const totalPoints      = Math.round((r1pts + r2pts + r3pts) * 100) / 100;
     const racesCompleted   = 3;
     const avgPointsPerRace = Math.round((totalPoints / racesCompleted) * 100) / 100;

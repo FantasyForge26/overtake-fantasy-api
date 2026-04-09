@@ -192,8 +192,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (pu) {
       const finishes = teamFinishes[pu.teamSlug] ?? [];
       if (finishes.length > 0) {
-        const avg = finishes.reduce((s, p) => s + p, 0) / finishes.length;
-        racePoints += calculatePowerUnitScore(avg);
+        racePoints += calculatePowerUnitScore(finishes);
       }
     }
 
