@@ -52,16 +52,18 @@ const CAR_TO_TEAM_2024: Record<number, string> = {
   10: 'Alpine',
   31: 'Alpine',
   23: 'Williams',
-  2:  'Williams',   // Sargeant (retired mid-season, Colapinto replaced)
+  2:  'Williams',        // Sargeant (retired mid-season, Colapinto replaced)
+  22: 'Racing Bulls',   // Tsunoda
+  3:  'Racing Bulls',   // Ricciardo
   27: 'Haas',
-  20: 'Haas',       // Magnussen
+  20: 'Haas',           // Magnussen
   77: 'Sauber',
-  24: 'Sauber',     // Zhou
+  24: 'Sauber',         // Zhou
 };
 
 const CAR_TO_TEAM_2025: Record<number, string> = {
   1:  'Red Bull',
-  30: 'Red Bull',   // Lawson
+  30: 'Red Bull',       // Lawson
   4:  'McLaren',
   81: 'McLaren',
   16: 'Ferrari',
@@ -71,12 +73,15 @@ const CAR_TO_TEAM_2025: Record<number, string> = {
   14: 'Aston Martin',
   18: 'Aston Martin',
   10: 'Alpine',
-  7:  'Alpine',     // Doohan
+  7:  'Alpine',         // Doohan
   23: 'Williams',
   55: 'Williams',
-  27: 'Sauber',
+  6:  'Racing Bulls',   // Hadjar
+  41: 'Racing Bulls',   // Colapinto
   31: 'Haas',
-  20: 'Haas',
+  87: 'Haas',           // Bearman
+  27: 'Audi',           // Hulkenberg (team rebranded from Sauber)
+  5:  'Audi',           // Bortoleto
 };
 
 // ---------------------------------------------------------------------------
@@ -114,20 +119,34 @@ const PU_TO_TEAMS_2025: Record<string, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
-// Pit crew slug → team name (one pit crew per team)
+// Pit crew: team name → [car numbers] per year
+// Asset slugs are per-car: e.g. "ferrari-pit-crew-16", "ferrari-pit-crew-44"
+// The team-slug prefix maps as: team name → slug prefix
 // ---------------------------------------------------------------------------
 
-const PIT_CREW_TO_TEAM: Record<string, string> = {
-  'red-bull-pit-crew':       'Red Bull',
-  'mclaren-pit-crew':        'McLaren',
-  'ferrari-pit-crew':        'Ferrari',
-  'mercedes-pit-crew':       'Mercedes',
-  'aston-martin-pit-crew':   'Aston Martin',
-  'alpine-pit-crew':         'Alpine',
-  'williams-pit-crew':       'Williams',
-  'haas-pit-crew':           'Haas',
-  'sauber-pit-crew':         'Sauber',
+const TEAM_TO_PIT_SLUG_PREFIX: Record<string, string> = {
+  'Red Bull':     'red-bull-pit-crew',
+  'McLaren':      'mclaren-pit-crew',
+  'Ferrari':      'ferrari-pit-crew',
+  'Mercedes':     'mercedes-pit-crew',
+  'Aston Martin': 'aston-martin-pit-crew',
+  'Alpine':       'alpine-pit-crew',
+  'Williams':     'williams-pit-crew',
+  'Haas':         'haas-pit-crew',
+  'Sauber':       'sauber-pit-crew',
+  'Racing Bulls': 'racing-bulls-pit-crew',
+  'Audi':         'audi-pit-crew',
 };
+
+// Build team → car numbers from the existing CAR_TO_TEAM maps
+function buildTeamToCarNums(carToTeam: Record<number, string>): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [carStr, team] of Object.entries(carToTeam)) {
+    if (!out[team]) out[team] = [];
+    out[team].push(Number(carStr));
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Seed principals for one year
@@ -375,14 +394,22 @@ async function seedPitCrews(
 ): Promise<void> {
   console.log(`\n── Pit Crews ${year} ──`);
 
+  // Remove stale team-level breakdown docs (assetSlug ends with "pit-crew", no car number suffix)
+  const deleted = await HistoricalRaceBreakdown.deleteMany({ assetSlug: /pit-crew$/ });
+  console.log(`  Deleted ${deleted.deletedCount} old team-level pit crew breakdown docs`);
+
+  const teamToCarNums = buildTeamToCarNums(carToTeam);
+
   type PitCrewRow = {
     round: number; flag: string; shortName: string; rPts: number; flBonus: number; tot: number;
     stopCount: number; avgStopTime: number; fastestStop: number; wasOverallFastest: boolean;
     stop1Time?: number; stop2Time?: number; stop3Time?: number;
   };
-  const acc: Record<string, { team: string; races: number; totalPoints: number; fastestStopCount: number; stopTimes: number[]; rows: PitCrewRow[] }> = {};
-  for (const [slug, team] of Object.entries(PIT_CREW_TO_TEAM)) {
-    acc[slug] = { team, races: 0, totalPoints: 0, fastestStopCount: 0, stopTimes: [], rows: [] };
+  // acc keyed by team name (e.g. 'Ferrari'); slugs are derived at save time per car number
+  const acc: Record<string, { races: number; totalPoints: number; fastestStopCount: number; stopTimes: number[]; rows: PitCrewRow[] }> = {};
+  for (const team of Object.keys(teamToCarNums)) {
+    if (!TEAM_TO_PIT_SLUG_PREFIX[team]) continue; // skip unknown teams
+    acc[team] = { races: 0, totalPoints: 0, fastestStopCount: 0, stopTimes: [], rows: [] };
   }
 
   for (let i = 0; i < meetings.length; i++) {
@@ -408,7 +435,7 @@ async function seedPitCrews(
       continue;
     }
 
-    // Build team → best pit stop time this race
+    // Build team → all stop times (across both cars) and best stop this race
     const teamBestStop: Record<string, number> = {};
     const teamAllStops: Record<string, number[]> = {};
 
@@ -427,10 +454,8 @@ async function seedPitCrews(
     const teamsWithData = Object.keys(teamBestStop);
     if (teamsWithData.length < 2) continue;
 
-    // Rank teams by fastest stop (ascending = best)
+    // Rank by fastest stop and avg stop time
     const fastestRanking = [...teamsWithData].sort((a, b) => teamBestStop[a] - teamBestStop[b]);
-
-    // Rank teams by average stop time (ascending = best)
     const teamAvgStop: Record<string, number> = {};
     for (const team of teamsWithData) {
       const stops = teamAllStops[team];
@@ -438,15 +463,15 @@ async function seedPitCrews(
     }
     const avgRanking = [...teamsWithData].sort((a, b) => teamAvgStop[a] - teamAvgStop[b]);
 
-    for (const [, data] of Object.entries(acc)) {
-      if (!teamBestStop[data.team]) continue;
+    for (const [team, data] of Object.entries(acc)) {
+      if (!teamBestStop[team]) continue;
 
       data.races++;
-      const teamStops = teamAllStops[data.team] ?? [];
+      const teamStops = teamAllStops[team] ?? [];
       data.stopTimes.push(...teamStops);
 
-      const fastestRank = fastestRanking.indexOf(data.team) + 1;
-      const avgRank = avgRanking.indexOf(data.team) + 1;
+      const fastestRank = fastestRanking.indexOf(team) + 1;
+      const avgRank = avgRanking.indexOf(team) + 1;
       const pts = calculatePitCrewScore(fastestRank, avgRank);
       data.totalPoints += pts;
 
@@ -471,7 +496,11 @@ async function seedPitCrews(
   }
 
   console.log(`Saving ${year} pit crew HistoricalSeason + HistoricalRaceBreakdown documents…`);
-  for (const [slug, data] of Object.entries(acc)) {
+  for (const [team, data] of Object.entries(acc)) {
+    const slugPrefix = TEAM_TO_PIT_SLUG_PREFIX[team];
+    if (!slugPrefix) continue;
+
+    const carNums = teamToCarNums[team] ?? [];
     const avgPointsPerRace = data.races > 0
       ? Math.round((data.totalPoints / data.races) * 100) / 100
       : 0;
@@ -479,40 +508,46 @@ async function seedPitCrews(
       ? Math.round((data.stopTimes.reduce((a, b) => a + b, 0) / data.stopTimes.length) * 1000) / 1000
       : undefined;
 
-    await HistoricalSeason.findOneAndUpdate(
-      { assetSlug: slug, season: year },
-      {
-        assetSlug:        slug,
-        assetType:        'pitCrew',
-        season:           year,
-        team:             data.team,
-        racesCompleted:   data.races,
-        totalPoints:      Math.round(data.totalPoints * 100) / 100,
-        avgPointsPerRace,
-        fastestStopCount: data.fastestStopCount,
-        ...(avgPitStopTime !== undefined && { avgPitStopTime }),
-      },
-      { upsert: true, new: true },
-    );
-    for (const row of data.rows) {
-      await HistoricalRaceBreakdown.findOneAndUpdate(
-        { assetSlug: slug, season: year, round: row.round },
+    // Save one HistoricalSeason per car slug
+    for (const carNum of carNums) {
+      const assetSlug = `${slugPrefix}-${carNum}`;
+      await HistoricalSeason.findOneAndUpdate(
+        { assetSlug, season: year },
         {
-          assetSlug: slug, season: year, round: row.round,
-          flag: row.flag, shortName: row.shortName,
-          rPts: row.rPts, flBonus: row.flBonus, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false,
-          stopCount: row.stopCount,
-          avgStopTime: row.avgStopTime,
-          fastestStop: row.fastestStop,
-          wasOverallFastest: row.wasOverallFastest,
-          ...(row.stop1Time !== undefined && { stop1Time: row.stop1Time }),
-          ...(row.stop2Time !== undefined && { stop2Time: row.stop2Time }),
-          ...(row.stop3Time !== undefined && { stop3Time: row.stop3Time }),
+          assetSlug,
+          assetType:        'pitCrew',
+          season:           year,
+          team,
+          racesCompleted:   data.races,
+          totalPoints:      Math.round(data.totalPoints * 100) / 100,
+          avgPointsPerRace,
+          fastestStopCount: data.fastestStopCount,
+          ...(avgPitStopTime !== undefined && { avgPitStopTime }),
         },
         { upsert: true, new: true },
       );
+
+      // Save one HistoricalRaceBreakdown per round per car slug
+      for (const row of data.rows) {
+        await HistoricalRaceBreakdown.findOneAndUpdate(
+          { assetSlug, season: year, round: row.round },
+          {
+            assetSlug, season: year, round: row.round,
+            flag: row.flag, shortName: row.shortName,
+            rPts: row.rPts, flBonus: row.flBonus, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false,
+            stopCount: row.stopCount,
+            avgStopTime: row.avgStopTime,
+            fastestStop: row.fastestStop,
+            wasOverallFastest: row.wasOverallFastest,
+            ...(row.stop1Time !== undefined && { stop1Time: row.stop1Time }),
+            ...(row.stop2Time !== undefined && { stop2Time: row.stop2Time }),
+            ...(row.stop3Time !== undefined && { stop3Time: row.stop3Time }),
+          },
+          { upsert: true, new: true },
+        );
+      }
+      console.log(`  ✓ ${assetSlug} (${year}): ${data.races} races, ${data.fastestStopCount} fastest stops, pts=${data.totalPoints.toFixed(1)}`);
     }
-    console.log(`  ✓ ${slug} (${year}): ${data.races} races, ${data.fastestStopCount} fastest stops, pts=${data.totalPoints.toFixed(1)}`);
   }
 }
 
