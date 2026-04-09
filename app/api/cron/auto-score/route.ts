@@ -163,7 +163,7 @@ async function scoreQualifying(round: number): Promise<number> {
         pts += p;
       }
 
-      roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
+      roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + pts) * 100) / 100;
       roster.updatedAt   = new Date();
       await roster.save();
       scoresCalculated++;
@@ -304,7 +304,7 @@ async function scoreSprint(round: number): Promise<number> {
       }
       if (principal) pts += principalScoreByTeam.get(principal.teamSlug) ?? 0;
 
-      roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
+      roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + pts) * 100) / 100;
       roster.updatedAt   = new Date();
       await roster.save();
       scoresCalculated++;
@@ -530,7 +530,7 @@ async function scoreRace(round: number): Promise<number> {
       }
       if (pu) pts += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
 
-      roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
+      roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + pts) * 100) / 100;
       roster.updatedAt   = new Date();
       await roster.save();
       scoresCalculated++;

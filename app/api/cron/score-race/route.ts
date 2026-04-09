@@ -353,7 +353,7 @@ export async function GET(req: NextRequest) {
         pts += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
       }
 
-      roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
+      roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + pts) * 100) / 100;
       roster.updatedAt   = new Date();
       await roster.save();
       scoresCalculated++;
