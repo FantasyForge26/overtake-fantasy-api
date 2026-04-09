@@ -4,7 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, RaceResult, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-import { FINISH_POINTS } from '@/lib/otf-calculator';
+import { PU_FINISH_POINTS } from '@/lib/otf-calculator';
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'Australia': '🇦🇺', 'China': '🇨🇳', 'Japan': '🇯🇵',
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const avg = carPositions.reduce((a, b) => a + b, 0) / carPositions.length;
     const avgPos = Math.round(avg);
-    const rPts = FINISH_POINTS[avgPos] ?? 0;
+    const rPts = PU_FINISH_POINTS[avgPos] ?? 0;
 
     rows.push({
       round:        rr.round,

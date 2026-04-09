@@ -162,15 +162,42 @@ export function calculatePitCrewScore(fastestStopRank: number, avgTimeRank: numb
 
 // ---------------------------------------------------------------------------
 // Power unit score
-// finishPositions = finish position of every car using that manufacturer this race.
-// DNFs should be passed as 22. Average is rounded to nearest whole number, then
-// looked up in FINISH_POINTS.
+// Separate points table with finer granularity — rewards manufacturer
+// consistency across all supplied cars (positions 1–22, DNF = 22).
 // ---------------------------------------------------------------------------
 
+export const PU_FINISH_POINTS: Record<number, number> = {
+  1:  27.00,
+  2:  25.87,
+  3:  24.62,
+  4:  23.37,
+  5:  22.12,
+  6:  20.87,
+  7:  19.62,
+  8:  18.37,
+  9:  17.12,
+  10: 15.87,
+  11: 14.62,
+  12: 13.37,
+  13: 12.12,
+  14: 10.87,
+  15:  9.62,
+  16:  8.37,
+  17:  7.12,
+  18:  5.87,
+  19:  4.62,
+  20:  3.37,
+  21:  2.12,
+  22:  0.87,
+};
+
+// finishPositions = finish position of every car using that manufacturer this race.
+// DNFs should be passed as 22. Average is rounded to nearest whole number, then
+// looked up in PU_FINISH_POINTS.
 export function calculatePowerUnitScore(finishPositions: number[]): number {
   if (finishPositions.length === 0) return 0;
   const avg = finishPositions.reduce((a, b) => a + b, 0) / finishPositions.length;
-  return FINISH_POINTS[Math.round(avg)] ?? 0;
+  return PU_FINISH_POINTS[Math.round(avg)] ?? 0;
 }
 
 // ---------------------------------------------------------------------------
