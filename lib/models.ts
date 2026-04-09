@@ -366,6 +366,8 @@ const HistoricalRaceBreakdownSchema = new Schema({
   driver2Pos:  { type: Number },
   driver1Name: { type: String },
   driver2Name: { type: String },
+  // powerUnit-specific: individual car finish positions that contributed to the score
+  carPositions: [{ type: Number }],
   // pitCrew-specific: per-race stop details
   stopCount:        { type: Number },
   avgStopTime:      { type: Number },

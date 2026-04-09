@@ -73,6 +73,7 @@ export async function GET(
     stop1Time:         r.stop1Time         ?? null,
     stop2Time:         r.stop2Time         ?? null,
     stop3Time:         r.stop3Time         ?? null,
+    carPositions:      r.carPositions      ?? null,
   }));
 
   return NextResponse.json({ rows: normRows, totals, qCounts, season });

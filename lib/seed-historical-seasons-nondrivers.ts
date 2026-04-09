@@ -118,6 +118,22 @@ const PU_TO_TEAMS_2025: Record<string, string[]> = {
   'renault-pu':       ['Alpine'],
 };
 
+// Each team's own PU asset slug (used to fan-out identical manufacturer data
+// to every team that ran that PU — e.g. Williams users see williams-pu history)
+const TEAM_TO_PU_SLUG: Record<string, string> = {
+  'Red Bull':     'red-bull-pu',
+  'McLaren':      'mclaren-pu',
+  'Ferrari':      'ferrari-pu',
+  'Mercedes':     'mercedes-pu',
+  'Aston Martin': 'aston-martin-pu',
+  'Alpine':       'alpine-pu',
+  'Williams':     'williams-pu',
+  'Haas':         'haas-pu',
+  'Sauber':       'sauber-pu',
+  'Racing Bulls': 'racing-bulls-pu',
+  'Audi':         'audi-pu',
+};
+
 // ---------------------------------------------------------------------------
 // Pit crew: team name → [car numbers] per year
 // Asset slugs are per-car: e.g. "ferrari-pit-crew-16", "ferrari-pit-crew-44"
@@ -304,7 +320,12 @@ async function seedPowerUnits(
 ): Promise<void> {
   console.log(`\n── Power Units ${year} ──`);
 
-  const acc: Record<string, { races: number; totalPoints: number; rows: { round: number; flag: string; shortName: string; rPts: number; tot: number }[] }> = {};
+  type PURow = {
+    round: number; flag: string; shortName: string; rPts: number; tot: number;
+    carPositions: number[];
+  };
+  // acc keyed by canonical manufacturer slug (e.g. 'mercedes-pu')
+  const acc: Record<string, { races: number; totalPoints: number; rows: PURow[] }> = {};
   for (const slug of Object.keys(puToTeams)) {
     acc[slug] = { races: 0, totalPoints: 0, rows: [] };
   }
@@ -332,7 +353,7 @@ async function seedPowerUnits(
       continue;
     }
 
-    // Build team → avg finish position (non-DNF only)
+    // Build team → finish positions (non-DNF only)
     const teamFinishes: Record<string, number[]> = {};
     for (const result of raceResults) {
       const team = carToTeam[result.driverNumber];
@@ -342,43 +363,49 @@ async function seedPowerUnits(
     }
 
     for (const [slug, teams] of Object.entries(puToTeams)) {
-      const allPositions: number[] = teams.flatMap(t => teamFinishes[t] ?? []);
-      if (allPositions.length === 0) continue;
+      const carPositions: number[] = teams.flatMap(t => teamFinishes[t] ?? []);
+      if (carPositions.length === 0) continue;
 
       acc[slug].races++;
-      const pts = calculatePowerUnitScore(allPositions);
+      const pts = calculatePowerUnitScore(carPositions);
       acc[slug].totalPoints += pts;
-      acc[slug].rows.push({ round, flag, shortName, rPts: pts, tot: pts });
+      acc[slug].rows.push({ round, flag, shortName, rPts: pts, tot: pts, carPositions });
     }
 
     console.log(`  ✓ Round ${round}`);
   }
 
   console.log(`Saving ${year} power unit HistoricalSeason + HistoricalRaceBreakdown documents…`);
-  for (const [slug, data] of Object.entries(acc)) {
+  for (const [manufacturerSlug, data] of Object.entries(acc)) {
     const avgPointsPerRace = data.races > 0
       ? Math.round((data.totalPoints / data.races) * 100) / 100
       : 0;
-    await HistoricalSeason.findOneAndUpdate(
-      { assetSlug: slug, season: year },
-      {
-        assetSlug:       slug,
-        assetType:       'powerUnit',
-        season:          year,
-        racesCompleted:  data.races,
-        totalPoints:     Math.round(data.totalPoints * 100) / 100,
-        avgPointsPerRace,
-      },
-      { upsert: true, new: true },
-    );
-    for (const row of data.rows) {
-      await HistoricalRaceBreakdown.findOneAndUpdate(
-        { assetSlug: slug, season: year, round: row.round },
-        { assetSlug: slug, season: year, round: row.round, flag: row.flag, shortName: row.shortName, rPts: row.rPts, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false },
+    const totalPoints = Math.round(data.totalPoints * 100) / 100;
+
+    // Fan-out: save identical data for every team PU slug that uses this manufacturer
+    const teams = puToTeams[manufacturerSlug] ?? [];
+    const assetSlugs = [...new Set(teams.map(t => TEAM_TO_PU_SLUG[t]).filter(Boolean))];
+
+    for (const assetSlug of assetSlugs) {
+      await HistoricalSeason.findOneAndUpdate(
+        { assetSlug, season: year },
+        { assetSlug, assetType: 'powerUnit', season: year, racesCompleted: data.races, totalPoints, avgPointsPerRace },
         { upsert: true, new: true },
       );
+      for (const row of data.rows) {
+        await HistoricalRaceBreakdown.findOneAndUpdate(
+          { assetSlug, season: year, round: row.round },
+          {
+            assetSlug, season: year, round: row.round,
+            flag: row.flag, shortName: row.shortName,
+            rPts: row.rPts, btBonus: 0, pgScore: 0, tot: row.tot, dnf: false,
+            carPositions: row.carPositions,
+          },
+          { upsert: true, new: true },
+        );
+      }
+      console.log(`  ✓ ${assetSlug} (${year}): ${data.races} races, pts=${totalPoints.toFixed(1)}`);
     }
-    console.log(`  ✓ ${slug} (${year}): ${data.races} races, pts=${data.totalPoints.toFixed(1)}`);
   }
 }
 
