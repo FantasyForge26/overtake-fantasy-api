@@ -151,13 +151,39 @@ export function calculateDriverSprintScore(input: DriverSprintScoreInput): numbe
 
 // ---------------------------------------------------------------------------
 // Pit crew score
+// Separate points table matching PU_FINISH_POINTS — covers ranks 1–22.
 // Ranks are relative to all pit crews that race — 1 = best.
 // rank 0 means the crew had no stops that race → 0 points.
 // ---------------------------------------------------------------------------
 
+export const PIT_CREW_POINTS: Record<number, number> = {
+  1:  27.00,
+  2:  25.87,
+  3:  24.62,
+  4:  23.37,
+  5:  22.12,
+  6:  20.87,
+  7:  19.62,
+  8:  18.37,
+  9:  17.12,
+  10: 15.87,
+  11: 14.62,
+  12: 13.37,
+  13: 12.12,
+  14: 10.87,
+  15:  9.62,
+  16:  8.37,
+  17:  7.12,
+  18:  5.87,
+  19:  4.62,
+  20:  3.37,
+  21:  2.12,
+  22:  0.87,
+};
+
 export function calculatePitCrewScore(fastestStopRank: number, avgTimeRank: number): number {
   if (fastestStopRank === 0 && avgTimeRank === 0) return 0;
-  return (FINISH_POINTS[fastestStopRank] ?? 0) + (FINISH_POINTS[avgTimeRank] ?? 0);
+  return (PIT_CREW_POINTS[fastestStopRank] ?? 0) + (PIT_CREW_POINTS[avgTimeRank] ?? 0);
 }
 
 // ---------------------------------------------------------------------------
