@@ -197,22 +197,35 @@ export async function GET(req: NextRequest) {
     pitCrewScoreByNum.set(carNumber, calculatePitCrewScore(fRank, aRank));
   }
 
-  // Power unit score per PU slug (average finish of all supplied teams)
-  const puScoreBySlug = new Map<string, number>();
+  // Power unit score per manufacturer — all cars using that manufacturer get the same score.
+  // DNF = 22 (outside FINISH_POINTS table → drags average down toward 0).
+  const puFinishesByManufacturer = new Map<string, number[]>();
   for (const pu of puBySlug.values()) {
-    const suppliedTeams: string[] = pu.suppliedTeams?.length ? pu.suppliedTeams : [pu.teamSlug];
+    const mfr: string = pu.manufacturer;
+    if (!mfr || puFinishesByManufacturer.has(mfr)) continue;
+
+    // Collect finish positions across every team supplied by any PU with this manufacturer
+    const allTeams = new Set<string>();
+    for (const p of puBySlug.values()) {
+      if (p.manufacturer !== mfr) continue;
+      const teams: string[] = p.suppliedTeams?.length ? p.suppliedTeams : [p.teamSlug];
+      for (const t of teams) allTeams.add(t);
+    }
+
     const finishes: number[] = [];
-    for (const teamSlug of suppliedTeams) {
+    for (const teamSlug of allTeams) {
       for (const d of driversByTeam.get(teamSlug) ?? []) {
         const cn   = SLUG_TO_CAR[d.slug];
         const race = cn !== undefined ? raceByNum.get(cn) : undefined;
-        finishes.push(race?.dnf ? 20 : (race?.position ?? 20));
+        finishes.push(race?.dnf ? 22 : (race?.position ?? 22));
       }
     }
-    if (finishes.length > 0) {
-      const avg = finishes.reduce((a, b) => a + b, 0) / finishes.length;
-      puScoreBySlug.set(pu.slug, calculatePowerUnitScore(avg));
-    }
+    puFinishesByManufacturer.set(mfr, finishes);
+  }
+
+  const puScoreByManufacturer = new Map<string, number>();
+  for (const [mfr, finishes] of puFinishesByManufacturer.entries()) {
+    puScoreByManufacturer.set(mfr, calculatePowerUnitScore(finishes));
   }
 
   // Principal score per teamSlug (sum of both team drivers' finish positions)
@@ -337,7 +350,7 @@ export async function GET(req: NextRequest) {
 
       // Power unit
       if (pu) {
-        pts += puScoreBySlug.get(pu.slug) ?? 0;
+        pts += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
       }
 
       roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
@@ -434,6 +447,30 @@ export async function GET(req: NextRequest) {
     });
 
     await pitCrew.save();
+  }
+
+  // Update power unit asset stats globally — all PU assets with the same manufacturer
+  // receive identical points for the race.
+  for (const pu of puBySlug.values()) {
+    const score = puScoreByManufacturer.get(pu.manufacturer) ?? 0;
+    if (score === 0) continue;
+
+    const puAsset = await Asset.findOne({ slug: pu.slug, assetType: 'powerUnit', season: 2026 });
+    if (!puAsset) continue;
+
+    puAsset.racesCompleted   = (puAsset.racesCompleted ?? 0) + 1;
+    puAsset.totalPoints      = (puAsset.totalPoints ?? 0) + score;
+    puAsset.avgPointsPerRace = puAsset.totalPoints / puAsset.racesCompleted;
+    puAsset.otfRating        = calculateOTFRating({
+      otfBaseRating:    puAsset.otfBaseRating,
+      racesCompleted:   puAsset.racesCompleted,
+      avgPointsPerRace: puAsset.avgPointsPerRace,
+      totalPoints:      puAsset.totalPoints,
+      teamStrength:     puAsset.teamStrength,
+      dnfCount:         0,
+    });
+
+    await puAsset.save();
   }
 
     return NextResponse.json({ success: true, round, scoresCalculated });

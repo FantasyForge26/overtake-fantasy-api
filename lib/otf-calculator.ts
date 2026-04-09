@@ -162,13 +162,15 @@ export function calculatePitCrewScore(fastestStopRank: number, avgTimeRank: numb
 
 // ---------------------------------------------------------------------------
 // Power unit score
-// avgFinishPosition = average finishing position of all cars using that manufacturer
-// (e.g. 7.0 means average 7th place). Rounded to nearest whole number, then
+// finishPositions = finish position of every car using that manufacturer this race.
+// DNFs should be passed as 22. Average is rounded to nearest whole number, then
 // looked up in FINISH_POINTS.
 // ---------------------------------------------------------------------------
 
-export function calculatePowerUnitScore(avgFinishPosition: number): number {
-  return FINISH_POINTS[Math.round(avgFinishPosition)] ?? 0;
+export function calculatePowerUnitScore(finishPositions: number[]): number {
+  if (finishPositions.length === 0) return 0;
+  const avg = finishPositions.reduce((a, b) => a + b, 0) / finishPositions.length;
+  return FINISH_POINTS[Math.round(avg)] ?? 0;
 }
 
 // ---------------------------------------------------------------------------

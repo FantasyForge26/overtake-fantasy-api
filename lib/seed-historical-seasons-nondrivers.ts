@@ -346,8 +346,7 @@ async function seedPowerUnits(
       if (allPositions.length === 0) continue;
 
       acc[slug].races++;
-      const avgPos = allPositions.reduce((a, b) => a + b, 0) / allPositions.length;
-      const pts = calculatePowerUnitScore(avgPos);
+      const pts = calculatePowerUnitScore(allPositions);
       acc[slug].totalPoints += pts;
       acc[slug].rows.push({ round, flag, shortName, rPts: pts, tot: pts });
     }

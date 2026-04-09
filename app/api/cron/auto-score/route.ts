@@ -410,21 +410,34 @@ async function scoreRace(round: number): Promise<number> {
     ]),
   );
 
-  // Power unit scores
-  const puScoreBySlug = new Map<string, number>();
+  // Power unit scores — grouped by manufacturer so all PU assets with the same
+  // manufacturer receive identical points. DNF = 22.
+  const puFinishesByManufacturer = new Map<string, number[]>();
   for (const pu of puBySlug.values()) {
-    const teams    = pu.suppliedTeams?.length ? pu.suppliedTeams : [pu.teamSlug];
+    const mfr: string = pu.manufacturer;
+    if (!mfr || puFinishesByManufacturer.has(mfr)) continue;
+
+    const allTeams = new Set<string>();
+    for (const p of puBySlug.values()) {
+      if (p.manufacturer !== mfr) continue;
+      const teams: string[] = p.suppliedTeams?.length ? p.suppliedTeams : [p.teamSlug];
+      for (const t of teams) allTeams.add(t);
+    }
+
     const finishes: number[] = [];
-    for (const teamSlug of teams) {
+    for (const teamSlug of allTeams) {
       for (const d of driversByTeam.get(teamSlug) ?? []) {
         const cn = SLUG_TO_CAR[d.slug];
         const r  = cn !== undefined ? raceByNum.get(cn) : undefined;
-        finishes.push(r?.dnf ? 20 : (r?.position ?? 20));
+        finishes.push(r?.dnf ? 22 : (r?.position ?? 22));
       }
     }
-    if (finishes.length) {
-      puScoreBySlug.set(pu.slug, calculatePowerUnitScore(finishes.reduce((a, b) => a + b, 0) / finishes.length));
-    }
+    puFinishesByManufacturer.set(mfr, finishes);
+  }
+
+  const puScoreByManufacturer = new Map<string, number>();
+  for (const [mfr, finishes] of puFinishesByManufacturer.entries()) {
+    puScoreByManufacturer.set(mfr, calculatePowerUnitScore(finishes));
   }
 
   // Principal scores
@@ -515,7 +528,7 @@ async function scoreRace(round: number): Promise<number> {
         if (perf?.pitCrew2Boost?.toString() === pc2._id.toString()) p *= 2;
         pts += p;
       }
-      if (pu) pts += puScoreBySlug.get(pu.slug) ?? 0;
+      if (pu) pts += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
 
       roster.totalPoints = (roster.totalPoints ?? 0) + Math.round(pts * 100) / 100;
       roster.updatedAt   = new Date();
