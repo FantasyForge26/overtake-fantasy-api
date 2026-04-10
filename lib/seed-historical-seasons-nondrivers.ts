@@ -424,6 +424,10 @@ async function seedPitCrews(
   const deleted = await HistoricalRaceBreakdown.deleteMany({ assetSlug: /pit-crew$/ });
   console.log(`  Deleted ${deleted.deletedCount} old team-level pit crew breakdown docs`);
 
+  // Remove docs with unconverted stop times (avgStopTime > 5s means raw pit_duration was stored)
+  const deletedOld = await HistoricalRaceBreakdown.deleteMany({ assetSlug: /pit-crew/, avgStopTime: { $gt: 5 } });
+  console.log(`  Deleted ${deletedOld.deletedCount} pit crew breakdown docs with unconverted stop times`);
+
   const teamToCarNums = buildTeamToCarNums(carToTeam);
 
   type PitCrewRow = {
