@@ -30,10 +30,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const isLocked = now >= new Date(upcomingRace.selectionDeadline);
 
-  const [roster, existingSelection, totalRacesCount, seasonSelections] = await Promise.all([
+  const [roster, existingSelection, seasonSelections] = await Promise.all([
     Roster.findOne({ leagueId, userId }),
     PerformanceSelection.findOne({ leagueId, userId, season: 2026, round: upcomingRace.round }),
-    RaceCalendar.countDocuments({ season: 2026, cancelled: false }),
     PerformanceSelection.find({ leagueId, userId, season: 2026 }).lean(),
   ]);
 
@@ -42,7 +41,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const pitCrew1BoostCount = seasonSelections.filter((s: any) => s.pitCrew1Boost).length;
   const pitCrew2BoostCount = seasonSelections.filter((s: any) => s.pitCrew2Boost).length;
 
-  const maxBoostsPerSlot = Math.floor(totalRacesCount / 2);
+  // Remaining races = races not yet scored (raceDate in the future)
+  const remainingRaces = await RaceCalendar.countDocuments({
+    season: 2026,
+    cancelled: false,
+    raceDate: { $gt: now },
+  });
+
+  // Split remaining races between slot 1 and slot 2.
+  // If odd number, slot 1 gets the higher number.
+  const maxBoostsSlot1 = Math.ceil(remainingRaces / 2);
+  const maxBoostsSlot2 = Math.floor(remainingRaces / 2);
 
   return NextResponse.json({
     upcomingRace,
@@ -55,8 +64,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       pitCrew1: pitCrew1BoostCount,
       pitCrew2: pitCrew2BoostCount,
     },
-    maxBoostsPerSlot,
-    totalRaces: totalRacesCount,
+    maxBoosts: {
+      driver1: maxBoostsSlot1,
+      driver2: maxBoostsSlot2,
+      pitCrew1: maxBoostsSlot1,
+      pitCrew2: maxBoostsSlot2,
+    },
   });
 }
 
