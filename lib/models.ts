@@ -205,6 +205,7 @@ const DraftSessionSchema = new Schema({
   autoDraftUserIds:     [{ type: String }],
   createdAt:            { type: Date, default: Date.now },
   completedAt:          { type: Date },
+  reminderSentAt:       { type: Date },
 });
 
 // ---------------------------------------------------------------------------
@@ -421,6 +422,35 @@ const AssetNewsSchema = new Schema({
 AssetNewsSchema.index({ assetSlug: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// PushToken
+// ---------------------------------------------------------------------------
+
+const PushTokenSchema = new Schema({
+  userId:    { type: Schema.Types.ObjectId, required: true },
+  token:     { type: String, required: true, unique: true },
+  platform:  { type: String, enum: ['ios', 'android'] },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+PushTokenSchema.index({ userId: 1 });
+
+// ---------------------------------------------------------------------------
+// Notification
+// ---------------------------------------------------------------------------
+
+const NotificationSchema = new Schema({
+  userId:    { type: Schema.Types.ObjectId, required: true },
+  type:      { type: String, enum: ['draft_turn', 'draft_reminder', 'league_invite', 'general'] },
+  title:     { type: String },
+  body:      { type: String },
+  read:      { type: Boolean, default: false },
+  data:      { type: Schema.Types.Mixed },
+  createdAt: { type: Date, default: Date.now },
+});
+
+NotificationSchema.index({ userId: 1, createdAt: -1 });
+
+// ---------------------------------------------------------------------------
 // NewsSummary
 // ---------------------------------------------------------------------------
 
@@ -452,4 +482,6 @@ export const HistoricalSeason         = mongoose.models.HistoricalSeason        
 export const HistoricalRaceBreakdown  = mongoose.models.HistoricalRaceBreakdown  || mongoose.model('HistoricalRaceBreakdown',  HistoricalRaceBreakdownSchema);
 export const ChatMessage              = mongoose.models.ChatMessage              || mongoose.model('ChatMessage',              ChatMessageSchema);
 export const AssetNews                = mongoose.models.AssetNews                || mongoose.model('AssetNews',                AssetNewsSchema);
+export const PushToken                = mongoose.models.PushToken                || mongoose.model('PushToken',                PushTokenSchema);
+export const Notification             = mongoose.models.Notification             || mongoose.model('Notification',             NotificationSchema);
 export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);

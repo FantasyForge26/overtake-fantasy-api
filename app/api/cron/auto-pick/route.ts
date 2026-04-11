@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
+import { sendPushToUser, sendPushToUsers } from '@/lib/push';
 
 function neededAssetTypes(roster: any): string[] {
   const needed: string[] = [];
@@ -140,6 +141,17 @@ export async function GET(req: NextRequest) {
 
     await draftSession.save();
     processed++;
+
+    // Push notifications
+    if (draftSession.status === 'completed') {
+      const allUserIds = draftSession.draftOrder.map((id: any) => id.toString());
+      sendPushToUsers(allUserIds, 'Draft complete! 🏁', 'Your team is set. Head to your paddock.', { screen: 'home', leagueId }, 'general').catch(() => {});
+    } else {
+      const nextUserId = draftSession.draftOrder[draftSession.currentPickIndex]?.toString();
+      if (nextUserId) {
+        sendPushToUser(nextUserId, "You're on the clock! 🏎", 'Make your draft pick now.', { screen: 'draft', leagueId }, 'draft_turn').catch(() => {});
+      }
+    }
   }
 
   return NextResponse.json({ processed });

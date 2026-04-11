@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { sendPushToUser, sendPushToUsers } from '@/lib/push';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -117,6 +118,14 @@ export async function POST(req: NextRequest) {
     draftSession.status === 'completed'
       ? null
       : draftSession.draftOrder[draftSession.currentPickIndex]?.toString() ?? null;
+
+  // Push notifications (fire and forget)
+  if (draftSession.status === 'completed') {
+    const allUserIds = draftSession.draftOrder.map((id: any) => id.toString());
+    sendPushToUsers(allUserIds, 'Draft complete! 🏁', 'Your team is set. Head to your paddock.', { screen: 'home', leagueId }, 'general').catch(() => {});
+  } else if (nextDrafterId) {
+    sendPushToUser(nextDrafterId, "You're on the clock! 🏎", 'Make your draft pick now.', { screen: 'draft', leagueId }, 'draft_turn').catch(() => {});
+  }
 
   return NextResponse.json({
     ...draftSession.toObject(),
