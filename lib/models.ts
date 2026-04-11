@@ -402,6 +402,25 @@ const ChatMessageSchema = new Schema({
 ChatMessageSchema.index({ leagueId: 1, createdAt: 1 });
 
 // ---------------------------------------------------------------------------
+// AssetNews
+// ---------------------------------------------------------------------------
+
+const AssetNewsSchema = new Schema({
+  assetSlug:   { type: String, required: true },
+  headlines:   [{
+    title:       { type: String },
+    summary:     { type: String },
+    url:         { type: String },
+    source:      { type: String },
+    publishedAt: { type: String },
+  }],
+  generatedAt:  { type: Date },
+  searchQuery:  { type: String },
+});
+
+AssetNewsSchema.index({ assetSlug: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -420,3 +439,4 @@ export const RaceCalendar          = mongoose.models.RaceCalendar          || mo
 export const HistoricalSeason         = mongoose.models.HistoricalSeason         || mongoose.model('HistoricalSeason',         HistoricalSeasonSchema);
 export const HistoricalRaceBreakdown  = mongoose.models.HistoricalRaceBreakdown  || mongoose.model('HistoricalRaceBreakdown',  HistoricalRaceBreakdownSchema);
 export const ChatMessage              = mongoose.models.ChatMessage              || mongoose.model('ChatMessage',              ChatMessageSchema);
+export const AssetNews                = mongoose.models.AssetNews                || mongoose.model('AssetNews',                AssetNewsSchema);
