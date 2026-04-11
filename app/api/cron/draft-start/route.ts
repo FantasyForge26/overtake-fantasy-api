@@ -109,11 +109,13 @@ export async function GET(req: NextRequest) {
     league.status = 'drafting';
     await league.save();
 
+    const isWaiverLeague = ['waivers', 'reverseStandings'].includes(league.acquisitionType);
     const rosterDocs = memberIds.map((uid: string) => ({
       leagueId: league._id,
       userId: new mongoose.Types.ObjectId(uid),
       season: 2026,
       teamName: 'My Team',
+      ccBalance: isWaiverLeague ? (league.ccStartingBalance ?? 100) : 0,
     }));
     try {
       await Roster.insertMany(rosterDocs, { ordered: false });

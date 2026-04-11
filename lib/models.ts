@@ -124,6 +124,7 @@ const RosterSchema = new Schema({
   deadCapNextSeason:  { type: Number, default: 0 },
   totalPoints:        { type: Number, default: 0 },
   seasonRank:         { type: Number, default: 0 },
+  ccBalance:          { type: Number, default: 0 },
   updatedAt:          { type: Date, default: Date.now },
 });
 
@@ -228,7 +229,7 @@ DraftQueueSchema.index({ leagueId: 1, userId: 1 }, { unique: true });
 const TransactionSchema = new Schema({
   leagueId:    { type: Schema.Types.ObjectId, ref: 'League', required: true },
   userId:      { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type:        { type: String, enum: ['add', 'drop', 'draft', 'trade', 'race', 'settings'], required: true },
+  type:        { type: String, enum: ['add', 'drop', 'draft', 'trade', 'race', 'settings', 'waiver'], required: true },
   addAssetId:  { type: Schema.Types.ObjectId, ref: 'Asset' },
   dropAssetId: { type: Schema.Types.ObjectId, ref: 'Asset' },
   note:        { type: String },
@@ -463,6 +464,24 @@ const NewsSummarySchema = new Schema({
 NewsSummarySchema.index({ url: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// WaiverBid
+// ---------------------------------------------------------------------------
+
+const WaiverBidSchema = new Schema({
+  leagueId:    { type: Schema.Types.ObjectId, required: true },
+  userId:      { type: Schema.Types.ObjectId, required: true },
+  assetId:     { type: Schema.Types.ObjectId, required: true },
+  dropAssetId: { type: Schema.Types.ObjectId },
+  bidAmount:   { type: Number, required: true, min: 0 },
+  status:      { type: String, enum: ['pending', 'won', 'lost', 'cancelled'], default: 'pending' },
+  processedAt: { type: Date },
+  createdAt:   { type: Date, default: Date.now },
+});
+
+WaiverBidSchema.index({ leagueId: 1, status: 1 });
+WaiverBidSchema.index({ leagueId: 1, userId: 1, assetId: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -485,3 +504,4 @@ export const AssetNews                = mongoose.models.AssetNews               
 export const PushToken                = mongoose.models.PushToken                || mongoose.model('PushToken',                PushTokenSchema);
 export const Notification             = mongoose.models.Notification             || mongoose.model('Notification',             NotificationSchema);
 export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);
+export const WaiverBid                = mongoose.models.WaiverBid                || mongoose.model('WaiverBid',                WaiverBidSchema);

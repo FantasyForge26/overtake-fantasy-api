@@ -37,6 +37,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'League not found' }, { status: 404 });
   }
 
+  if (['waivers', 'reverseStandings'].includes(league.acquisitionType)) {
+    return NextResponse.json({ error: 'This league uses waiver bidding. Use the waiver bid endpoint instead.' }, { status: 400 });
+  }
+
   const asset = await Asset.findById(addAssetId).select('assetType name').lean() as any;
   if (!asset) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
