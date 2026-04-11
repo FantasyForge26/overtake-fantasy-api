@@ -40,7 +40,7 @@ export async function GET(
     : '';
   const searchQuery = `${assetName}${typeHint ? ` ${typeHint}` : ''} F1 2026`;
 
-  const prompt = `Search for the 5 most recent and relevant F1 news stories about ${assetName}${typeHint ? ` (${typeHint})` : ''}. For each story return: title, a 2 sentence summary, source name, url, and published date. Focus on 2026 season news, recent race results, team updates, and significant developments. Return ONLY a JSON array of exactly 5 objects with fields: title, summary, url, source, publishedAt`;
+  const prompt = `Search for the 5 most recent and relevant F1 news stories about ${assetName}${typeHint ? ` (${typeHint})` : ''}. For each story return: title, a 2 sentence summary, source name, url, and published date. Focus on 2026 season news, recent race results, team updates, and significant developments. Do not include any citation tags, XML tags, or markdown in the summaries. Plain text only. Return ONLY a JSON array of exactly 5 objects with fields: title, summary, url, source, publishedAt`;
 
   // Call Anthropic API with web_search tool
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -82,6 +82,16 @@ export async function GET(
   } catch (e) {
     console.error('Failed to parse headlines JSON:', textBlock.text);
     return NextResponse.json({ error: 'Failed to parse news response' }, { status: 502 });
+  }
+
+  // Strip citation/XML tags from summaries
+  for (const headline of headlines) {
+    if (typeof headline.summary === 'string') {
+      headline.summary = headline.summary
+        .replace(/<cite[^>]*>/gi, '')
+        .replace(/<\/cite>/gi, '')
+        .trim();
+    }
   }
 
   const generatedAt = new Date();
