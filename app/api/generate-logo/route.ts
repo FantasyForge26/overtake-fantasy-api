@@ -14,96 +14,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'teamName is required' }, { status: 400 });
   }
 
-  const apiKey = process.env.STABILITY_API_KEY;
-  console.log('[generate-logo] STABILITY_API_KEY prefix:', apiKey ? apiKey.slice(0, 10) : 'NOT SET');
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Image generation not configured' }, { status: 500 });
-  }
-
-  const prompt = `Flat 2D vector logo for F1 team called ${teamName.trim()}. Style: exactly like Alpine, Williams, McLaren, Haas or Red Bull Racing F1 team logos — flat corporate identity, white background, bold typography, simple geometric icon or lettermark, no gradients, no 3D effects, no photographs, no realistic rendering. Colors: Primary ${primaryColor ?? ''}, Secondary ${secondaryColor ?? ''}, Accent ${accentColor ?? ''}. Clean SVG-style flat design. Professional motorsport brand mark. Transparent background, no background, isolated logo on transparent background.`;
+  const prompt = `Flat 2D vector logo for F1 motorsport team called '${teamName.trim()}'. Use these exact brand colors: primary ${primaryColor ?? ''}, secondary ${secondaryColor ?? ''}, accent ${accentColor ?? ''}. Style: clean corporate F1 team identity like Alpine, McLaren, or Red Bull Racing logos. Bold typography, simple geometric icon or lettermark. Flat design, no gradients, no 3D, no photographs. White background. Professional motorsport brand mark.`;
 
   console.log('[generate-logo] prompt:', prompt);
 
-  // Step 1: Generate the logo
-  const genForm = new FormData();
-  genForm.append('prompt', prompt);
-  genForm.append('output_format', 'png');
-  genForm.append('aspect_ratio', '1:1');
-
-  let imageBuffer: ArrayBuffer;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&nologo=true&seed=${Math.floor(Math.random() * 999999)}`;
 
   try {
-    console.log('[generate-logo] calling generate endpoint...');
-    const genRes = await fetch(
-      'https://api.stability.ai/v2beta/stable-image/generate/core',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: 'image/*',
-        },
-        body: genForm,
-      },
-    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    console.log('[generate-logo] generate status:', genRes.status);
-    console.log('[generate-logo] generate content-type:', genRes.headers.get('content-type'));
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeout);
 
-    if (!genRes.ok) {
-      const errText = await genRes.text();
-      console.error('[generate-logo] generate error body:', errText);
-      return NextResponse.json(
-        { error: `Image generation failed (${genRes.status})`, stabilityError: errText, step: 'generate' },
-        { status: 502 },
-      );
+    console.log('[generate-logo] Pollinations status:', res.status);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[generate-logo] Pollinations error:', errText);
+      return NextResponse.json({ error: `Image generation failed (${res.status})` }, { status: 502 });
     }
 
-    imageBuffer = await genRes.arrayBuffer();
-    console.log('[generate-logo] generate success, buffer size:', imageBuffer.byteLength);
-  } catch (err: any) {
-    console.error('[generate-logo] generate fetch exception:', err?.message ?? err);
-    return NextResponse.json({ error: 'Logo generation failed', detail: err?.message ?? String(err), step: 'generate' }, { status: 500 });
-  }
-
-  // Step 2: Remove background to get transparent PNG
-  try {
-    console.log('[generate-logo] calling remove-background endpoint...');
-    const imageBlob = new Blob([imageBuffer], { type: 'image/png' });
-    const bgForm = new FormData();
-    bgForm.append('image', imageBlob, 'logo.png');
-    bgForm.append('output_format', 'png');
-
-    const bgRes = await fetch(
-      'https://api.stability.ai/v2beta/stable-image/edit/remove-background',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: 'image/*',
-        },
-        body: bgForm,
-      },
-    );
-
-    console.log('[generate-logo] remove-background status:', bgRes.status);
-    console.log('[generate-logo] remove-background content-type:', bgRes.headers.get('content-type'));
-
-    if (!bgRes.ok) {
-      const errText = await bgRes.text();
-      console.error('[generate-logo] remove-background error body:', errText);
-      // Fall back to original image, but include the error detail in response
-      const imageBase64 = Buffer.from(imageBuffer).toString('base64');
-      return NextResponse.json({ imageBase64, bgRemovalError: errText, bgRemovalStatus: bgRes.status });
-    }
-
-    const transparentBuffer = await bgRes.arrayBuffer();
-    console.log('[generate-logo] remove-background success, buffer size:', transparentBuffer.byteLength);
-    const imageBase64 = Buffer.from(transparentBuffer).toString('base64');
+    const imageBuffer = await res.arrayBuffer();
+    console.log('[generate-logo] success, buffer size:', imageBuffer.byteLength);
+    const imageBase64 = Buffer.from(imageBuffer).toString('base64');
     return NextResponse.json({ imageBase64 });
   } catch (err: any) {
-    console.error('[generate-logo] remove-background fetch exception:', err?.message ?? err);
-    // Fall back to original image
-    const imageBase64 = Buffer.from(imageBuffer).toString('base64');
-    return NextResponse.json({ imageBase64, bgRemovalError: err?.message ?? String(err) });
+    console.error('[generate-logo] fetch exception:', err?.message ?? err);
+    return NextResponse.json({ error: 'Logo generation failed', detail: err?.message ?? String(err) }, { status: 500 });
   }
 }
