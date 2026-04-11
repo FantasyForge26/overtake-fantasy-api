@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { League, Asset, DraftSession, Roster, User } from '@/lib/models';
 
@@ -110,14 +111,17 @@ export async function GET(req: NextRequest) {
 
     const rosterDocs = memberIds.map((uid: string) => ({
       leagueId: league._id,
-      userId: uid,
+      userId: new mongoose.Types.ObjectId(uid),
       season: 2026,
       teamName: 'My Team',
     }));
     try {
       await Roster.insertMany(rosterDocs, { ordered: false });
     } catch (e: any) {
-      if (e.code !== 11000 && e?.writeErrors?.some((we: any) => we.code !== 11000)) {
+      const isDupKeyOnly = e.code === 11000 ||
+        e?.writeErrors?.every((we: any) => we.code === 11000);
+      if (!isDupKeyOnly) {
+        console.error('Roster insertMany error:', JSON.stringify(e?.writeErrors ?? e));
         throw e;
       }
     }
