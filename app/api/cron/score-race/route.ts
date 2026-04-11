@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { Asset, League, Roster, RaceResult, PerformanceSelection, RaceCalendar } from '@/lib/models';
+import { Asset, HistoricalSeason, League, Roster, RaceResult, PerformanceSelection, RaceCalendar } from '@/lib/models';
 import {
   calculateDriverRaceScore,
   calculateDriverQualifyingScore,
@@ -474,6 +474,36 @@ export async function GET(req: NextRequest) {
     });
 
     await puAsset.save();
+  }
+
+  // Recalculate OTF ratings for all 2026 assets now that scores are updated
+  const allAssets2026 = await Asset.find({ season: 2026, isActive: true }).lean() as any[];
+  for (const a of allAssets2026) {
+    const historicalDocs = await HistoricalSeason.find({ assetSlug: a.slug }).lean() as any[];
+    const historicalSeasons = historicalDocs.map((h: any) => ({
+      season:           h.season,
+      wins:             h.wins ?? 0,
+      podiums:          h.podiums ?? 0,
+      racesCompleted:   h.racesCompleted ?? 0,
+      q3Count:          h.q3Count ?? 0,
+      qualifyingRaces:  h.qualifyingRaces ?? 0,
+      dnfCount:         h.dnfCount ?? 0,
+      avgPointsPerRace: h.avgPointsPerRace ?? 0,
+      championshipWins: h.championshipWins ?? 0,
+    }));
+    const newRating = calculateOTFRating({
+      otfBaseRating:    a.otfBaseRating ?? 50,
+      racesCompleted:   a.racesCompleted ?? 0,
+      avgPointsPerRace: a.avgPointsPerRace ?? 0,
+      totalPoints:      a.totalPoints ?? 0,
+      age:              a.age,
+      teamStrength:     a.teamStrength ?? 50,
+      dnfCount:         a.dnfCount ?? 0,
+      assetType:        a.assetType,
+      championshipWins: a.championshipWins,
+      historicalSeasons,
+    });
+    await Asset.findByIdAndUpdate(a._id, { otfRating: newRating });
   }
 
     return NextResponse.json({ success: true, round, scoresCalculated });
