@@ -206,7 +206,22 @@ export function calculatePrincipalScore(driver1FinishPosition: number, driver2Fi
 // OTF rating recalculation (season-long rolling rating)
 // ---------------------------------------------------------------------------
 
-interface HistoricalSeasonForOTF {
+// ---------------------------------------------------------------------------
+// OTF tier labels and colours
+// ---------------------------------------------------------------------------
+
+export const OTF_TIER = (rating: number): { label: string; color: string } =>
+  rating >= 90 ? { label: 'Elite',   color: '#FFD600' } :
+  rating >= 75 ? { label: 'Strong',  color: '#A6FF00' } :
+  rating >= 55 ? { label: 'Average', color: '#00D1FF' } :
+  rating >= 35 ? { label: 'Risky',   color: '#FF8C00' } :
+                 { label: 'Weak',    color: '#FF2D2D' };
+
+// ---------------------------------------------------------------------------
+// OTF rating (redesigned)
+// ---------------------------------------------------------------------------
+
+export interface HistoricalSeasonForOTF {
   season: number;
   wins: number;
   podiums: number;
@@ -215,9 +230,10 @@ interface HistoricalSeasonForOTF {
   qualifyingRaces: number;
   dnfCount: number;
   avgPointsPerRace: number;
+  championshipWins?: number;
 }
 
-interface AssetForOTF {
+export interface AssetForOTF {
   otfBaseRating: number;
   racesCompleted: number;
   avgPointsPerRace: number;
@@ -226,61 +242,104 @@ interface AssetForOTF {
   teamStrength: number;
   dnfCount: number;
   historicalSeasons?: HistoricalSeasonForOTF[];
+  assetType?: 'driver' | 'pitCrew' | 'powerUnit' | 'principal';
+  championshipWins?: number;
 }
 
-function calculateHistoricalScore(historicalSeasons: HistoricalSeasonForOTF[]): number | null {
-  if (!historicalSeasons.length) return null;
+// Season weights — most-recent data weighted heaviest
+const SEASON_WEIGHTS: Record<number, number> = { 2026: 0.50, 2025: 0.25, 2024: 0.15, 2023: 0.10 };
 
-  const WEIGHTS: Record<number, number> = { 2025: 0.6, 2024: 0.4 };
+// Max realistic avgPointsPerRace per asset type (used to normalise to 0-100)
+const MAX_PTS_PER_RACE: Record<string, number> = {
+  driver:    30,
+  pitCrew:   50,
+  powerUnit: 25,
+  principal: 50,
+};
+
+function seasonNormalisedScore(s: HistoricalSeasonForOTF, assetType: string): number {
+  const maxPts = MAX_PTS_PER_RACE[assetType] ?? 30;
+  const baseScore = Math.min((s.avgPointsPerRace / maxPts) * 100, 100);
+
+  if (assetType === 'driver') {
+    const winsBonus = Math.min(s.wins * 5, 20);
+    const q3Rate    = s.qualifyingRaces > 0 ? s.q3Count / s.qualifyingRaces : 0;
+    const q3Bonus   = q3Rate * 10;
+    return Math.min(baseScore + winsBonus + q3Bonus, 100);
+  }
+
+  return baseScore;
+}
+
+function calculateHistoricalWeightedScore(
+  historicalSeasons: HistoricalSeasonForOTF[],
+  assetType: string,
+): number | null {
+  if (!historicalSeasons.length) return null;
 
   let weightedSum = 0;
   let totalWeight = 0;
 
   for (const s of historicalSeasons) {
-    const weight = WEIGHTS[s.season];
-    if (!weight) continue;
+    const weight = SEASON_WEIGHTS[s.season];
+    if (!weight || s.racesCompleted === 0) continue;
 
-    const q3Rate     = s.qualifyingRaces > 0 ? s.q3Count / s.qualifyingRaces : 0;
-    const seasonScore = Math.min(s.wins * 3 + s.podiums * 1.5 + q3Rate * 10, 20);
-
-    weightedSum  += seasonScore * weight;
-    totalWeight  += weight;
+    const score = seasonNormalisedScore(s, assetType);
+    weightedSum += score * weight;
+    totalWeight += weight;
   }
 
   if (totalWeight === 0) return null;
   return weightedSum / totalWeight;
 }
 
+function calculateChampionBonus(asset: AssetForOTF): number {
+  // +2 per WDC/WCC win in historical seasons, capped at +8
+  const seasonWins = (asset.historicalSeasons ?? [])
+    .reduce((sum, s) => sum + (s.championshipWins ?? 0), 0);
+  const seasonBonus = Math.min(seasonWins * 2, 8);
+
+  // +1.5 per career championship win on the asset, capped at +6
+  const careerBonus = Math.min((asset.championshipWins ?? 0) * 1.5, 6);
+
+  return Math.min(seasonBonus + careerBonus, 10);
+}
+
 export function calculateOTFRating(asset: AssetForOTF): number {
+  const assetType     = asset.assetType ?? 'driver';
+  const maxPtsPerRace = MAX_PTS_PER_RACE[assetType] ?? 30;
+
   const historicalScore = asset.historicalSeasons?.length
-    ? calculateHistoricalScore(asset.historicalSeasons)
+    ? calculateHistoricalWeightedScore(asset.historicalSeasons, assetType)
     : null;
+
+  const championBonus = calculateChampionBonus(asset);
+
+  let rating: number;
 
   if (asset.racesCompleted === 0) {
     if (historicalScore !== null) {
-      // Scale historicalScore (0–20) to a 0–99 range via base rating anchor
-      const blended = 0.4 * asset.otfBaseRating + 0.6 * (historicalScore * (99 / 20));
-      return Math.min(99, Math.max(1, Math.round(blended)));
+      rating = 0.6 * historicalScore + 0.4 * asset.otfBaseRating + championBonus;
+    } else {
+      rating = asset.otfBaseRating + championBonus;
     }
-    return asset.otfBaseRating;
+  } else {
+    const currentSeasonScore = Math.min((asset.avgPointsPerRace / maxPtsPerRace) * 100, 100);
+    const reliability = ((asset.racesCompleted - (asset.dnfCount ?? 0)) / asset.racesCompleted) * 10;
+
+    if (historicalScore !== null) {
+      rating = 0.5 * currentSeasonScore
+             + 0.3 * historicalScore
+             + 0.1 * reliability
+             + 0.1 * asset.otfBaseRating
+             + championBonus;
+    } else {
+      rating = 0.6 * currentSeasonScore
+             + 0.2 * reliability
+             + 0.2 * asset.otfBaseRating
+             + championBonus;
+    }
   }
 
-  const performanceScore = Math.min(asset.avgPointsPerRace * 5, 50);
-  const volumeScore      = Math.min(asset.totalPoints / 500, 1) * 20;
-  const ageBoost         = asset.age
-    ? asset.age < 25 ? 8 : asset.age < 28 ? 5 : asset.age < 32 ? 2 : 0
-    : 0;
-  const teamBoost        = (asset.teamStrength / 100) * 10;
-  const reliabilityScore =
-    ((asset.racesCompleted - asset.dnfCount) / asset.racesCompleted) * 10;
-
-  const currentScore = performanceScore + volumeScore + ageBoost + teamBoost + reliabilityScore;
-
-  if (historicalScore !== null) {
-    const scaledHistorical = historicalScore * (99 / 20);
-    const blended = 0.7 * currentScore + 0.3 * scaledHistorical;
-    return Math.min(99, Math.max(1, Math.round(blended)));
-  }
-
-  return Math.min(99, Math.max(1, Math.round(currentScore)));
+  return Math.min(99, Math.max(1, Math.round(rating)));
 }

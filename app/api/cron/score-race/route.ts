@@ -419,6 +419,7 @@ export async function GET(req: NextRequest) {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount ?? 0,
+      assetType:        'driver',
     });
 
     await asset.save();
@@ -444,6 +445,7 @@ export async function GET(req: NextRequest) {
       totalPoints:      pitCrew.totalPoints,
       teamStrength:     pitCrew.teamStrength,
       dnfCount:         0,
+      assetType:        'pitCrew',
     });
 
     await pitCrew.save();
@@ -468,6 +470,7 @@ export async function GET(req: NextRequest) {
       totalPoints:      puAsset.totalPoints,
       teamStrength:     puAsset.teamStrength,
       dnfCount:         0,
+      assetType:        'powerUnit',
     });
 
     await puAsset.save();

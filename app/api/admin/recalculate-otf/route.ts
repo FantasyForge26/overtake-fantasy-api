@@ -13,7 +13,17 @@ export async function POST(req: NextRequest) {
   const assets = await Asset.find({ season: 2026, isActive: true });
 
   for (const asset of assets) {
-    asset.otfRating = calculateOTFRating(asset);
+    asset.otfRating = calculateOTFRating({
+      otfBaseRating:    asset.otfBaseRating,
+      racesCompleted:   asset.racesCompleted ?? 0,
+      avgPointsPerRace: asset.avgPointsPerRace ?? 0,
+      totalPoints:      asset.totalPoints ?? 0,
+      age:              asset.age,
+      teamStrength:     asset.teamStrength ?? 50,
+      dnfCount:         asset.dnfCount ?? 0,
+      assetType:        asset.assetType,
+      championshipWins: asset.championshipWins,
+    });
     await asset.save();
   }
 

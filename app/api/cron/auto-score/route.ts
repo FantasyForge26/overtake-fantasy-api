@@ -205,6 +205,7 @@ async function scoreQualifying(round: number): Promise<number> {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount ?? 0,
+      assetType:        'driver',
     });
     await asset.save();
   }
@@ -341,6 +342,7 @@ async function scoreSprint(round: number): Promise<number> {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount ?? 0,
+      assetType:        'driver',
     });
     await asset.save();
   }
@@ -570,6 +572,7 @@ async function scoreRace(round: number): Promise<number> {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount ?? 0,
+      assetType:        'driver',
     });
     await asset.save();
   }
@@ -594,6 +597,7 @@ async function scoreRace(round: number): Promise<number> {
       totalPoints:      pitCrew.totalPoints,
       teamStrength:     pitCrew.teamStrength,
       dnfCount:         0,
+      assetType:        'pitCrew',
     });
     await pitCrew.save();
   }

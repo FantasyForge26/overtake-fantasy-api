@@ -408,6 +408,7 @@ async function seedHistoricalResults() {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount,
+      assetType:        'driver',
     });
 
     await asset.save();
@@ -453,6 +454,7 @@ async function seedHistoricalResults() {
       age:              undefined,
       teamStrength:     asset.teamStrength,
       dnfCount:         0,
+      assetType:        'pitCrew',
     });
 
     await asset.save();
@@ -517,6 +519,7 @@ async function seedHistoricalResults() {
       age:              undefined,
       teamStrength:     asset.teamStrength,
       dnfCount:         0,
+      assetType:        'powerUnit',
     });
 
     await asset.save();
@@ -598,6 +601,7 @@ async function seedHistoricalResults() {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         0,
+      assetType:        'principal',
     });
 
     await asset.save();
@@ -830,6 +834,7 @@ async function seedHistoricalResults() {
       age:              asset.age,
       teamStrength:     asset.teamStrength,
       dnfCount:         asset.dnfCount ?? 0,
+      assetType:        'driver',
     });
 
     await asset.save();
@@ -881,6 +886,7 @@ async function seedHistoricalResults() {
       teamStrength:     asset.teamStrength ?? 50,
       dnfCount:         asset.dnfCount ?? 0,
       historicalSeasons,
+      assetType:        'driver',
     });
 
     await asset.save();
