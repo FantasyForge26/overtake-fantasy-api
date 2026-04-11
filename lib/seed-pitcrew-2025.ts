@@ -5,6 +5,9 @@
  * - Filters: 15s <= pit_duration <= 60s
  * - Ranks per car (not per team) for fastestRank / avgRank
  * - Saves HistoricalRaceBreakdown + HistoricalSeason per car slug
+ *
+ * Run full seed:      node_modules/.bin/ts-node --compiler-options '{"module":"commonjs"}' lib/seed-pitcrew-2025.ts
+ * Seasons only:       node_modules/.bin/ts-node --compiler-options '{"module":"commonjs"}' lib/seed-pitcrew-2025.ts --seasons-only
  */
 
 import mongoose from 'mongoose';
@@ -76,15 +79,60 @@ async function rawFetch<T>(path: string): Promise<T[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Derive HistoricalSeason from freshly seeded HistoricalRaceBreakdown docs
 // ---------------------------------------------------------------------------
 
-async function main() {
-  await mongoose.connect(MONGO_URI);
-  console.log('Connected to MongoDB\n');
+async function updateHistoricalSeasons() {
+  console.log('\nSaving HistoricalSeason docs (derived from DB)…');
 
+  const allSlugs = Object.entries(CAR_TO_PIT_SLUG_PREFIX_2025).map(
+    ([carNum, prefix]) => `${prefix}-${carNum}`,
+  );
+
+  for (const assetSlug of allSlugs) {
+    const docs = await HistoricalRaceBreakdown.find({ assetSlug, season: 2025, assetType: 'pitCrew' }).lean();
+    if (docs.length === 0) continue;
+
+    const totalPts    = docs.reduce((s, d) => s + (d.rPts ?? 0), 0);
+    const totalStops  = docs.reduce((s, d) => s + (d.stopCount ?? 0), 0);
+    // Weighted average: sum(avgStopTime * stopCount) / sum(stopCount)
+    const weightedSum = docs.reduce((s, d) => s + ((d.avgStopTime ?? 0) * (d.stopCount ?? 0)), 0);
+    const fastestCount = docs.filter(d => d.wasOverallFastest).length;
+
+    const totalPoints      = Math.round(totalPts * 100) / 100;
+    const avgPointsPerRace = Math.round((totalPts / docs.length) * 100) / 100;
+    const avgPitStopTime   = totalStops > 0
+      ? Math.round((weightedSum / totalStops) * 100) / 100
+      : undefined;
+
+    await HistoricalSeason.findOneAndUpdate(
+      { assetSlug, season: 2025 },
+      {
+        assetSlug,
+        assetType:        'pitCrew',
+        season:           2025,
+        racesCompleted:   docs.length,
+        totalPoints,
+        avgPointsPerRace,
+        fastestStopCount: fastestCount,
+        ...(avgPitStopTime !== undefined && { avgPitStopTime }),
+      },
+      { upsert: true, new: true },
+    );
+    console.log(`  ✓ ${assetSlug}: ${docs.length} races, pts=${totalPoints.toFixed(2)}, avgStop=${avgPitStopTime?.toFixed(2)}s`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Full seed
+// ---------------------------------------------------------------------------
+
+async function seedBreakdowns() {
   // 1. Delete ALL existing pitCrew HistoricalRaceBreakdown docs
-  const deleted = await HistoricalRaceBreakdown.deleteMany({ assetType: 'pitCrew' });
+  // Match by slug pattern to catch docs saved before assetType was added to schema
+  const deleted = await HistoricalRaceBreakdown.deleteMany({
+    assetSlug: { $regex: /^.+-pit-crew-\d+$/ },
+  });
   console.log(`Deleted ${deleted.deletedCount} existing pitCrew HistoricalRaceBreakdown docs\n`);
 
   // 2. Fetch 2025 race meetings
@@ -94,12 +142,6 @@ async function main() {
     .filter((m: any) => !/test/i.test(m.meeting_name))
     .sort((a: any, b: any) => new Date(a.date_start).getTime() - new Date(b.date_start).getTime());
   console.log(`Found ${meetings.length} race meetings\n`);
-
-  // Per-car season accumulator for HistoricalSeason
-  const carAcc: Record<number, { totalPts: number; races: number; allStops: number[]; fastestStopCount: number }> = {};
-  for (const carNum of Object.keys(CAR_TO_PIT_SLUG_PREFIX_2025).map(Number)) {
-    carAcc[carNum] = { totalPts: 0, races: 0, allStops: [], fastestStopCount: 0 };
-  }
 
   // 3. Process each race
   for (let i = 0; i < meetings.length; i++) {
@@ -169,11 +211,11 @@ async function main() {
       const avgRank     = avgRanking.indexOf(carNum) + 1;
       const rPts        = calculatePitCrewScore(fastestRank, avgRank);
 
-      const stopCount       = stopTimes.length;
-      const avgStopTime     = Math.round((stopTimes.reduce((a, b) => a + b, 0) / stopCount) * 100) / 100;
-      const fastestStop     = Math.round(Math.min(...stopTimes) * 100) / 100;
+      const stopCount         = stopTimes.length;
+      const avgStopTime       = Math.round((stopTimes.reduce((a, b) => a + b, 0) / stopCount) * 100) / 100;
+      const fastestStop       = Math.round(Math.min(...stopTimes) * 100) / 100;
       const wasOverallFastest = carNum === overallFastestCar;
-      const sorted          = [...stopTimes].sort((a, b) => a - b);
+      const sorted            = [...stopTimes].sort((a, b) => a - b);
 
       await HistoricalRaceBreakdown.findOneAndUpdate(
         { assetSlug, season: 2025, round },
@@ -200,49 +242,31 @@ async function main() {
         },
         { upsert: true, new: true },
       );
-
-      // Accumulate for HistoricalSeason
-      carAcc[carNum].totalPts += rPts;
-      carAcc[carNum].races++;
-      carAcc[carNum].allStops.push(...stopTimes);
-      if (wasOverallFastest) carAcc[carNum].fastestStopCount++;
     }
 
     console.log(`  ✓ Round ${round} (${country}): ${carsWithData.length} cars, fastest=${fastestByCar[overallFastestCar].toFixed(2)}s (car #${overallFastestCar})`);
   }
+}
 
-  // 4. Save HistoricalSeason per car slug
-  console.log('\nSaving HistoricalSeason docs…');
-  for (const [carNumStr, data] of Object.entries(carAcc)) {
-    const carNum    = Number(carNumStr);
-    const slugPrefix = CAR_TO_PIT_SLUG_PREFIX_2025[carNum];
-    if (!slugPrefix || data.races === 0) continue;
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
-    const assetSlug      = `${slugPrefix}-${carNum}`;
-    const totalPoints    = Math.round(data.totalPts * 100) / 100;
-    const avgPointsPerRace = Math.round((data.totalPts / data.races) * 100) / 100;
-    const avgPitStopTime = data.allStops.length > 0
-      ? Math.round((data.allStops.reduce((a, b) => a + b, 0) / data.allStops.length) * 100) / 100
-      : undefined;
+async function main() {
+  await mongoose.connect(MONGO_URI);
+  console.log('Connected to MongoDB\n');
 
-    await HistoricalSeason.findOneAndUpdate(
-      { assetSlug, season: 2025 },
-      {
-        assetSlug,
-        assetType:        'pitCrew',
-        season:           2025,
-        racesCompleted:   data.races,
-        totalPoints,
-        avgPointsPerRace,
-        fastestStopCount: data.fastestStopCount,
-        ...(avgPitStopTime !== undefined && { avgPitStopTime }),
-      },
-      { upsert: true, new: true },
-    );
-    console.log(`  ✓ ${assetSlug}: ${data.races} races, pts=${totalPoints.toFixed(2)}, avgStop=${avgPitStopTime?.toFixed(2)}s`);
+  const seasonsOnly = process.argv.includes('--seasons-only');
+
+  if (seasonsOnly) {
+    await updateHistoricalSeasons();
+    console.log('\n✅ HistoricalSeason update complete');
+  } else {
+    await seedBreakdowns();
+    await updateHistoricalSeasons();
+    console.log('\n✅ 2025 pit crew seed complete');
   }
 
-  console.log('\n✅ 2025 pit crew seed complete');
   process.exit(0);
 }
 

@@ -348,6 +348,7 @@ HistoricalSeasonSchema.index({ assetSlug: 1, season: 1 }, { unique: true });
 
 const HistoricalRaceBreakdownSchema = new Schema({
   assetSlug: { type: String, required: true },
+  assetType: { type: String, enum: ['driver', 'principal', 'pitCrew', 'powerUnit'] },
   season:    { type: Number, required: true },
   round:     { type: Number, required: true },
   flag:      { type: String },
