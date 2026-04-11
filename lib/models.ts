@@ -421,6 +421,18 @@ const AssetNewsSchema = new Schema({
 AssetNewsSchema.index({ assetSlug: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// NewsSummary
+// ---------------------------------------------------------------------------
+
+const NewsSummarySchema = new Schema({
+  url:      { type: String, required: true },
+  summary:  { type: String },
+  cachedAt: { type: Date },
+});
+
+NewsSummarySchema.index({ url: 1 }, { unique: true });
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -440,3 +452,4 @@ export const HistoricalSeason         = mongoose.models.HistoricalSeason        
 export const HistoricalRaceBreakdown  = mongoose.models.HistoricalRaceBreakdown  || mongoose.model('HistoricalRaceBreakdown',  HistoricalRaceBreakdownSchema);
 export const ChatMessage              = mongoose.models.ChatMessage              || mongoose.model('ChatMessage',              ChatMessageSchema);
 export const AssetNews                = mongoose.models.AssetNews                || mongoose.model('AssetNews',                AssetNewsSchema);
+export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);
