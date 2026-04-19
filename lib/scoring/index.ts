@@ -52,10 +52,33 @@ export function calculateRaceWeekendScores(
 
   const race = calculateAllRaceDriverScores(data.raceResults);
 
-  const { scores: principals, newStreakStates: newPrincipalStreakStates } =
-    calculateAllPrincipalScores(data.principalResults, principalStreakStates);
+  // Compute pit crew scores first — principal scoring depends on avg stop ranks
+  const pitCrews = calculateAllPitCrewScores(data.pitData);
 
-  const pitCrews  = calculateAllPitCrewScores(data.pitData);
+  // Build teamName → [avgStopRank, ...] map so principal can consume pit crew ranks
+  const teamPitRanks = new Map<string, number[]>();
+  for (let i = 0; i < data.pitData.length; i++) {
+    const { teamName } = data.pitData[i];
+    // avgStopRank === 0 means no stops; principal.ts converts 0/null to 22
+    const rank = pitCrews[i]?.avgStopRank ?? 0;
+    const arr = teamPitRanks.get(teamName) ?? [];
+    arr.push(rank);
+    teamPitRanks.set(teamName, arr);
+  }
+
+  // Enrich principalResults with pit crew avg stop ranks
+  const enrichedPrincipalResults: PrincipalRaceResult[] = data.principalResults.map(pr => {
+    const ranks = teamPitRanks.get(pr.teamName) ?? [];
+    return {
+      ...pr,
+      pitCrew1AvgStopRank: ranks[0] ?? null,
+      pitCrew2AvgStopRank: ranks[1] ?? null,
+    };
+  });
+
+  const { scores: principals, newStreakStates: newPrincipalStreakStates } =
+    calculateAllPrincipalScores(enrichedPrincipalResults, principalStreakStates);
+
   const powerUnits = calculatePowerUnitScores(data.carFinishData);
 
   return {

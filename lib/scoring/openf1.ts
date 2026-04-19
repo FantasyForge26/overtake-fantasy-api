@@ -284,6 +284,8 @@ export async function buildRaceWeekendData(
     driver2FinishPosition:     drivers[1]?.finish ?? null,
     driver1QualifyingPosition: null, // updated below
     driver2QualifyingPosition: null,
+    pitCrew1AvgStopRank:       null, // enriched in index.ts after pit crew scoring
+    pitCrew2AvgStopRank:       null,
   }));
 
   // Patch qualifying positions into principal results
