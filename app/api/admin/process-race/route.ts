@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { Asset, League, Roster, HistoricalSeason } from '@/lib/models';
+import { Asset, League, Roster, HistoricalSeason, ProcessedRace } from '@/lib/models';
 import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
@@ -29,12 +29,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { meetingKey } = await req.json();
+  const body = await req.json();
+  const { meetingKey } = body;
+  const force = req.nextUrl.searchParams.get('force') === 'true';
+
   if (!meetingKey) {
     return NextResponse.json({ error: 'meetingKey is required' }, { status: 400 });
   }
 
   await connectDB();
+
+  // -------------------------------------------------------------------------
+  // 0. Idempotency check
+  // -------------------------------------------------------------------------
+  if (!force) {
+    const existing = await ProcessedRace.findOne({ meetingKey }).lean() as any;
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Race already processed', meetingKey, raceName: existing.raceName },
+        { status: 409 },
+      );
+    }
+  }
+
+  // Reserve the slot before fetching — prevents duplicate concurrent runs.
+  // We'll delete it below if OpenF1 fails so the race can be retried.
+  const lock = await ProcessedRace.create({ meetingKey, raceName: null });
 
   // -------------------------------------------------------------------------
   // 1. Build race weekend data from OpenF1
@@ -43,8 +63,13 @@ export async function POST(req: NextRequest) {
   try {
     weekendData = await buildRaceWeekendData(meetingKey, POWER_UNIT_MAP);
   } catch (err: any) {
+    // Release the lock so the race can be retried
+    await ProcessedRace.deleteOne({ _id: lock._id });
     return NextResponse.json({ error: `OpenF1 fetch failed: ${err.message}` }, { status: 502 });
   }
+
+  // Patch in the actual race name now that we have it
+  await ProcessedRace.updateOne({ _id: lock._id }, { raceName: weekendData.raceName });
 
   // -------------------------------------------------------------------------
   // 2. Load principal streak states from DB (stored on assets or a simple map)

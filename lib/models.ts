@@ -483,6 +483,16 @@ WaiverBidSchema.index({ leagueId: 1, status: 1 });
 WaiverBidSchema.index({ leagueId: 1, userId: 1, assetId: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// ProcessedRace — idempotency log for admin/process-race
+// ---------------------------------------------------------------------------
+
+const ProcessedRaceSchema = new Schema({
+  meetingKey: { type: Number, required: true, unique: true },
+  raceName:   { type: String },
+  processedAt:{ type: Date, default: Date.now },
+});
+
+// ---------------------------------------------------------------------------
 // Exports (HMR-safe)
 // ---------------------------------------------------------------------------
 
@@ -506,3 +516,4 @@ export const PushToken                = mongoose.models.PushToken               
 export const Notification             = mongoose.models.Notification             || mongoose.model('Notification',             NotificationSchema);
 export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);
 export const WaiverBid                = mongoose.models.WaiverBid                || mongoose.model('WaiverBid',                WaiverBidSchema);
+export const ProcessedRace            = mongoose.models.ProcessedRace            || mongoose.model('ProcessedRace',            ProcessedRaceSchema);
