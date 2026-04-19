@@ -42,7 +42,9 @@ export async function POST(req: NextRequest) {
   // -------------------------------------------------------------------------
   // 0. Idempotency check
   // -------------------------------------------------------------------------
-  if (!force) {
+  if (force) {
+    await ProcessedRace.deleteOne({ meetingKey });
+  } else {
     const existing = await ProcessedRace.findOne({ meetingKey }).lean() as any;
     if (existing) {
       return NextResponse.json(
