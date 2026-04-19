@@ -1,16 +1,16 @@
 const QUALIFYING_POSITION_BONUS: Record<number, number> = {
-   1: 8.90,  2: 8.50,  3: 8.09,  4: 7.69,  5: 7.28,
-   6: 6.88,  7: 6.47,  8: 6.07,  9: 5.66, 10: 5.26,
-  11: 4.85, 12: 4.45, 13: 4.05, 14: 3.64, 15: 3.24,
-  16: 2.83, 17: 2.43, 18: 2.02, 19: 1.62, 20: 1.21,
-  21: 0.81, 22: 0.40,
+   1: 7.57,  2: 7.23,  3: 6.88,  4: 6.54,  5: 6.19,
+   6: 5.85,  7: 5.50,  8: 5.16,  9: 4.81, 10: 4.47,
+  11: 4.12, 12: 3.78, 13: 3.43, 14: 3.09, 15: 2.75,
+  16: 2.40, 17: 2.06, 18: 1.72, 19: 1.37, 20: 1.03,
+  21: 0.69, 22: 0.34,
 };
 
-const Q2_BONUS            =  0.89;
-const Q3_BONUS            =  1.78;
-const TEAMMATE_BEAT_BONUS =  0.89;
-const DNQ_PENALTY         = -1.78;
-const DSQ_PENALTY         = -2.67;
+const Q2_BONUS            =  0.76;
+const Q3_BONUS            =  1.51;
+const TEAMMATE_BEAT_BONUS =  0.76;
+const DNQ_PENALTY         = -1.51;
+const DSQ_PENALTY         = -2.27;
 
 export interface QualifyingDriverResult {
   driverNumber:  number;
