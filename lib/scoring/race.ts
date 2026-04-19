@@ -1,19 +1,19 @@
 const RACE_POSITION_BONUS: Record<number, number> = {
-   1: 18.91,  2: 18.05,  3: 17.19,  4: 16.33,  5: 15.47,
-   6: 14.61,  7: 13.75,  8: 12.89,  9: 12.03, 10: 11.17,
-  11: 10.31, 12:  9.45, 13:  8.59, 14:  7.73, 15:  6.87,
-  16:  6.01, 17:  5.15, 18:  4.29, 19:  3.43, 20:  2.57,
-  21:  1.71, 22:  0.85,
+   1: 34.04,  2: 32.49,  3: 30.94,  4: 29.39,  5: 27.85,
+   6: 26.30,  7: 24.75,  8: 23.20,  9: 21.65, 10: 20.11,
+  11: 18.56, 12: 17.01, 13: 15.46, 14: 13.91, 15: 12.37,
+  16: 10.82, 17:  9.27, 18:  7.72, 19:  6.17, 20:  4.63,
+  21:  3.08, 22:  1.53,
 };
 
-const FINISHED_BONUS          =  1.38;
-const POSITIONS_GAINED_PTS    =  0.69;
-const POSITIONS_LOST_PTS      = -0.17;
-const TEAMMATE_BEAT_BONUS     =  1.72;
-const FASTEST_LAP_BONUS       =  3.78;
-const TOP10_CROSSOVER_BONUS   =  0.34;
-const TOP10_CROSSOVER_PENALTY = -0.34;
-const DSQ_PENALTY             = -6.88;
+const FINISHED_BONUS          =  2.48;
+const POSITIONS_GAINED_PTS    =  1.24;
+const POSITIONS_LOST_PTS      = -0.31;
+const TEAMMATE_BEAT_BONUS     =  3.10;
+const FASTEST_LAP_BONUS       =  6.80;
+const TOP10_CROSSOVER_BONUS   =  0.61;
+const TOP10_CROSSOVER_PENALTY = -0.61;
+const DSQ_PENALTY             = -12.38;
 
 export interface RaceDriverResult {
   driverNumber:   number;

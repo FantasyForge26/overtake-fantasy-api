@@ -1,33 +1,33 @@
-const QUALIFYING_STREAK_BONUS = 5.00;
-const RACE_STREAK_BONUS       = 7.50;
+const QUALIFYING_STREAK_BONUS = 7.50;
+const RACE_STREAK_BONUS       = 11.25;
 const STREAK_LENGTH           = 3;
+const DRIVER_COMPONENT_SCALE  = 0.65;
 
-// Combined rank ranges from 1 (both P1, both pit crew rank 1) to 22.
-// Formula: 61.824 - ((rank - 1) * (61.205 / 21)), floored at 0.
-const PRINCIPAL_POSITION_BONUS: Record<number, number> = {
-   1: 61.82,  2: 58.90,  3: 55.95,  4: 52.99,  5: 50.08,
-   6: 47.10,  7: 44.16,  8: 41.22,  9: 38.26, 10: 35.32,
-  11: 32.37, 12: 29.41, 13: 26.45, 14: 23.50, 15: 20.56,
-  16: 17.60, 17: 14.65, 18: 11.71, 19:  8.75, 20:  5.81,
-  21:  2.86, 22:  0.62,
+const PIT_CREW_AVG_RANK_BONUS: Record<number, number> = {
+   1: 14.00,  2: 13.34,  3: 12.67,  4: 12.01,  5: 11.35,
+   6: 10.68,  7: 10.02,  8:  9.34,  9:  8.68, 10:  8.02,
+  11:  7.35, 12:  6.69, 13:  6.03, 14:  5.35, 15:  4.69,
+  16:  4.02, 17:  3.36, 18:  2.70, 19:  2.03, 20:  1.37,
+  21:  0.71, 22:  0.28,
 };
 
 export interface PrincipalRaceResult {
   teamName:                  string;
-  driver1FinishPosition:     number | null; // null = DNF → scored as 22
-  driver2FinishPosition:     number | null; // null = DNF → scored as 22
-  driver1QualifyingPosition: number | null; // null = DNQ
-  driver2QualifyingPosition: number | null; // null = DNQ
-  pitCrew1AvgStopRank:       number | null; // null = no stops → scored as 22
-  pitCrew2AvgStopRank:       number | null; // null = no stops → scored as 22
+  driver1WeeklyPoints:       number; // total qual + sprint + race points for driver 1
+  driver2WeeklyPoints:       number; // total qual + sprint + race points for driver 2
+  driver1QualifyingPosition: number | null;
+  driver2QualifyingPosition: number | null;
+  driver1FinishPosition:     number | null; // null = DNF — used for streak check only
+  driver2FinishPosition:     number | null;
+  pitCrew1AvgStopRank:       number | null; // null / 0 = no stops → scored as 22
+  pitCrew2AvgStopRank:       number | null;
 }
 
 export interface PrincipalScore {
   teamName:              string;
-  driverAvgPosition:     number;
+  driverAvgPoints:       number;
   pitCrewAvgRank:        number;
-  combinedRank:          number;
-  positionBonus:         number;
+  pitCrewBonus:          number;
   qualifyingStreakBonus: number;
   raceStreakBonus:       number;
   total:                 number;
@@ -42,26 +42,22 @@ export function calculatePrincipalScore(
   result: PrincipalRaceResult,
   streakState: PrincipalStreakState,
 ): { score: PrincipalScore; newStreakState: PrincipalStreakState } {
-  // Driver component: avg finish position (DNF → 22)
-  const d1Finish = result.driver1FinishPosition ?? 22;
-  const d2Finish = result.driver2FinishPosition ?? 22;
-  const driverAvgPosition = (d1Finish + d2Finish) / 2;
+  // Driver component: average of both drivers' weekly fantasy points
+  const rawAvg = (result.driver1WeeklyPoints + result.driver2WeeklyPoints) / 2;
+  const driverAvgPoints =
+    Math.floor(rawAvg * DRIVER_COMPONENT_SCALE * 100) / 100;
 
-  // Pit crew component: avg stop rank (no stops → 22)
+  // Pit crew component: floor average of the two crews' avg stop ranks (no stops → 22)
   const pc1Rank = result.pitCrew1AvgStopRank != null && result.pitCrew1AvgStopRank > 0
     ? result.pitCrew1AvgStopRank
     : 22;
   const pc2Rank = result.pitCrew2AvgStopRank != null && result.pitCrew2AvgStopRank > 0
     ? result.pitCrew2AvgStopRank
     : 22;
-  const pitCrewAvgRank = (pc1Rank + pc2Rank) / 2;
+  const pitCrewAvgRank = Math.floor((pc1Rank + pc2Rank) / 2);
+  const pitCrewBonus   = PIT_CREW_AVG_RANK_BONUS[Math.min(22, Math.max(1, pitCrewAvgRank))] ?? 0.28;
 
-  // Combined rank: average of driver avg and pit crew avg, rounded to nearest integer
-  const combinedRank = Math.min(22, Math.max(1, Math.round((driverAvgPosition + pitCrewAvgRank) / 2)));
-
-  const positionBonus = PRINCIPAL_POSITION_BONUS[combinedRank] ?? 0.35;
-
-  // Qualifying streak: both drivers must finish top 10 in qualifying
+  // Qualifying streak: both drivers top 10 in qualifying
   const bothQualTop10 =
     result.driver1QualifyingPosition != null && result.driver1QualifyingPosition <= 10 &&
     result.driver2QualifyingPosition != null && result.driver2QualifyingPosition <= 10;
@@ -70,7 +66,7 @@ export function calculatePrincipalScore(
   const qualifyingStreakBonus  = incrementedQualStreak === STREAK_LENGTH ? QUALIFYING_STREAK_BONUS : 0;
   const newQualStreak          = incrementedQualStreak === STREAK_LENGTH ? 0 : incrementedQualStreak;
 
-  // Race streak: both drivers must finish top 10 in the race
+  // Race streak: both drivers top 10 in race
   const bothRaceTop10 =
     result.driver1FinishPosition != null && result.driver1FinishPosition <= 10 &&
     result.driver2FinishPosition != null && result.driver2FinishPosition <= 10;
@@ -79,15 +75,14 @@ export function calculatePrincipalScore(
   const raceStreakBonus        = incrementedRaceStreak === STREAK_LENGTH ? RACE_STREAK_BONUS : 0;
   const newRaceStreak          = incrementedRaceStreak === STREAK_LENGTH ? 0 : incrementedRaceStreak;
 
-  const total = Math.round((positionBonus + qualifyingStreakBonus + raceStreakBonus) * 100) / 100;
+  const total = Math.round((driverAvgPoints + pitCrewBonus + qualifyingStreakBonus + raceStreakBonus) * 100) / 100;
 
   return {
     score: {
       teamName: result.teamName,
-      driverAvgPosition: Math.round(driverAvgPosition * 100) / 100,
-      pitCrewAvgRank:    Math.round(pitCrewAvgRank * 100) / 100,
-      combinedRank,
-      positionBonus,
+      driverAvgPoints,
+      pitCrewAvgRank,
+      pitCrewBonus,
       qualifyingStreakBonus,
       raceStreakBonus,
       total,

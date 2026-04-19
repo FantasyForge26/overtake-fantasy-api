@@ -52,6 +52,20 @@ export function calculateRaceWeekendScores(
 
   const race = calculateAllRaceDriverScores(data.raceResults);
 
+  // Build driverNumber → total weekly fantasy points map (qual + sprint + race)
+  const driverWeeklyPoints = new Map<number, number>();
+  for (const q of qualifying) {
+    driverWeeklyPoints.set(q.driverNumber, (driverWeeklyPoints.get(q.driverNumber) ?? 0) + q.total);
+  }
+  if (sprint) {
+    for (const s of sprint) {
+      driverWeeklyPoints.set(s.driverNumber, (driverWeeklyPoints.get(s.driverNumber) ?? 0) + s.total);
+    }
+  }
+  for (const r of race) {
+    driverWeeklyPoints.set(r.driverNumber, (driverWeeklyPoints.get(r.driverNumber) ?? 0) + r.total);
+  }
+
   // Compute pit crew scores first — principal scoring depends on avg stop ranks
   const pitCrews = calculateAllPitCrewScores(data.pitData);
 
@@ -66,11 +80,22 @@ export function calculateRaceWeekendScores(
     teamPitRanks.set(teamName, arr);
   }
 
-  // Enrich principalResults with pit crew avg stop ranks
+  // Build teamName → [driverNumber, ...] map from race results
+  const teamDriverNumbers = new Map<string, number[]>();
+  for (const r of data.raceResults) {
+    const arr = teamDriverNumbers.get(r.teamName) ?? [];
+    arr.push(r.driverNumber);
+    teamDriverNumbers.set(r.teamName, arr);
+  }
+
+  // Enrich principalResults with pit crew avg stop ranks and driver weekly points
   const enrichedPrincipalResults: PrincipalRaceResult[] = data.principalResults.map(pr => {
-    const ranks = teamPitRanks.get(pr.teamName) ?? [];
+    const ranks   = teamPitRanks.get(pr.teamName) ?? [];
+    const drivers = teamDriverNumbers.get(pr.teamName) ?? [];
     return {
       ...pr,
+      driver1WeeklyPoints: driverWeeklyPoints.get(drivers[0]) ?? 0,
+      driver2WeeklyPoints: driverWeeklyPoints.get(drivers[1]) ?? 0,
       pitCrew1AvgStopRank: ranks[0] ?? null,
       pitCrew2AvgStopRank: ranks[1] ?? null,
     };
