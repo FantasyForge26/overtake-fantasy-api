@@ -1,8 +1,8 @@
 const DNF_POSITION = 22;
 
-// Points by rank: 12.5 - ((rank - 1) * 0.625), min 0.125
+// Points by rank: 11.375 - ((rank - 1) * 0.56875), min 0.114
 function rankBonus(rank: number): number {
-  return Math.max(0.125, 12.5 - ((rank - 1) * 0.625));
+  return Math.max(0.114, 11.375 - ((rank - 1) * 0.56875));
 }
 
 export interface CarFinishData {
