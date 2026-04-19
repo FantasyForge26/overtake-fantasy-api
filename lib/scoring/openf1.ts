@@ -25,6 +25,7 @@ async function get(path: string, params: Record<string, string | number> = {}): 
       delay *= 2;
       continue;
     }
+    if (res.status === 404) return [];
     if (!res.ok) throw new Error(`OpenF1 ${res.status}: GET ${url}`);
     return res.json();
   }
