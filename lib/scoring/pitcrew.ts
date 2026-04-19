@@ -1,6 +1,6 @@
-// Points by rank: 9.75 - ((rank - 1) * 0.45), min 0.30
+// Points by rank: 15.6 - ((rank - 1) * 0.72), min 0.48
 function rankBonus(rank: number): number {
-  return Math.max(0.30, 9.75 - ((rank - 1) * 0.45));
+  return Math.max(0.48, 15.6 - ((rank - 1) * 0.72));
 }
 
 export interface CarPitData {
