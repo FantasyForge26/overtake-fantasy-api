@@ -280,6 +280,8 @@ export async function buildRaceWeekendData(
 
   const principalResults: PrincipalRaceResult[] = Array.from(teamDrivers.entries()).map(([teamName, drivers]) => ({
     teamName,
+    driver1WeeklyPoints:       0,    // enriched in index.ts after scoring
+    driver2WeeklyPoints:       0,    // enriched in index.ts after scoring
     driver1FinishPosition:     drivers[0]?.finish ?? null,
     driver2FinishPosition:     drivers[1]?.finish ?? null,
     driver1QualifyingPosition: null, // updated below
