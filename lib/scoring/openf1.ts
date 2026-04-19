@@ -60,16 +60,35 @@ export async function fetchLaps(sessionKey: number): Promise<any[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Status normalisation
+// Status normalisation — uses boolean fields from session_result objects
 // ---------------------------------------------------------------------------
 
-function normaliseStatus(raw: string | undefined | null): 'Finished' | 'DNF' | 'DSQ' {
-  if (!raw) return 'DNF';
-  const s = raw.toLowerCase();
-  if (s.includes('disq') || s.includes('dsq')) return 'DSQ';
-  if (s.includes('dnf') || s.includes('retired') || s.includes('accident') ||
-      s.includes('collision') || s.includes('mechanical') || s.includes('withdrew')) return 'DNF';
+function normaliseStatus(result: any): 'Finished' | 'DNF' | 'DSQ' {
+  if (result.dsq === true) return 'DSQ';
+  if (result.dnf === true || result.dns === true) return 'DNF';
   return 'Finished';
+}
+
+// ---------------------------------------------------------------------------
+// Fastest lap detection — find driver with minimum valid lap_duration
+// ---------------------------------------------------------------------------
+
+function findFastestLapDriver(laps: any[]): number | null {
+  let fastest: number | null = null;
+  let fastestDriver: number | null = null;
+
+  for (const lap of laps) {
+    // Skip null durations and pit-out laps
+    if (lap.lap_duration == null) continue;
+    if (lap.is_pit_out_lap === true) continue;
+
+    if (fastest === null || lap.lap_duration < fastest) {
+      fastest = lap.lap_duration;
+      fastestDriver = lap.driver_number;
+    }
+  }
+
+  return fastestDriver;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,33 +132,29 @@ async function buildQualifyingResults(
   await sleep(400);
 
   // Build final-position map: use the highest-stage result for each driver
-  const finalPosMap = new Map<number, { position: number; status: string; setLapTime: boolean }>();
+  const finalPosMap = new Map<number, { position: number; isDSQ: boolean; isDNQ: boolean }>();
 
   // Start with Q1 results
   for (const r of q1Results) {
+    const status = normaliseStatus(r);
     finalPosMap.set(r.driver_number, {
-      position:   r.position,
-      status:     r.status ?? 'Finished',
-      setLapTime: !!r.lap_duration || r.status?.toLowerCase() !== 'dnq',
+      position: r.position,
+      isDSQ:    status === 'DSQ',
+      isDNQ:    status === 'DNF', // dns in qualifying = did not qualify
     });
   }
   // Override with final-stage results for drivers who advanced
   for (const r of finalResults) {
+    const status = normaliseStatus(r);
     finalPosMap.set(r.driver_number, {
-      position:   r.position,
-      status:     r.status ?? 'Finished',
-      setLapTime: true,
+      position: r.position,
+      isDSQ:    status === 'DSQ',
+      isDNQ:    false, // reached a higher stage → qualified
     });
   }
 
   return Array.from(finalPosMap.entries()).map(([driverNumber, data]) => {
-    const isDSQ = data.status?.toLowerCase().includes('dsq') ||
-                  data.status?.toLowerCase().includes('disq');
-    const isDNQ = !data.setLapTime ||
-                  data.status?.toLowerCase().includes('dnq') ||
-                  data.status?.toLowerCase().includes('did not');
-
-    const status: 'Qualified' | 'DNQ' | 'DSQ' = isDSQ ? 'DSQ' : isDNQ ? 'DNQ' : 'Qualified';
+    const status: 'Qualified' | 'DNQ' | 'DSQ' = data.isDSQ ? 'DSQ' : data.isDNQ ? 'DNQ' : 'Qualified';
     const reachedQ2 = q2Drivers.has(driverNumber);
     const reachedQ3 = q3Drivers.has(driverNumber);
 
@@ -149,7 +164,7 @@ async function buildQualifyingResults(
       finalPosition: status === 'Qualified' ? data.position : null,
       reachedQ2,
       reachedQ3,
-      setLapTime:    data.setLapTime,
+      setLapTime:    status === 'Qualified',
       status,
     };
   });
@@ -177,32 +192,52 @@ export async function buildRaceWeekendData(
 
   if (!raceSession) throw new Error(`No Race session found for meeting ${meetingKey}`);
 
-  // 2. Fetch race session data
-  const [raceResults, raceGrid, raceDrivers, pitStopsRaw] = await Promise.all([
+  // 2. Fetch race session data (laps in parallel for fastest lap detection)
+  const [raceResults, raceGridRaw, raceDrivers, pitStopsRaw, raceLaps] = await Promise.all([
     fetchSessionResult(raceSession.session_key),
     fetchStartingGrid(raceSession.session_key),
     fetchDrivers(raceSession.session_key),
     fetchPitStops(raceSession.session_key),
+    fetchLaps(raceSession.session_key),
   ]);
 
   // Build driver maps
   const driverTeamMap = new Map<number, string>(); // driverNumber → teamName
   for (const d of raceDrivers) driverTeamMap.set(d.driver_number, d.team_name ?? 'Unknown');
 
-  const gridMap = new Map<number, number>(); // driverNumber → gridPosition
-  for (const g of raceGrid) gridMap.set(g.driver_number, g.position ?? 20);
+  // 3. Qualifying results (needed for grid fallback)
+  let qualifyingResults: QualifyingDriverResult[] = [];
+  if (qualSessions.length > 0) {
+    qualifyingResults = await buildQualifyingResults(qualSessions, driverTeamMap);
+  }
 
-  // 3. Build race driver results
+  // Build grid map — fall back to qualifying positions if starting_grid is empty
+  const gridMap = new Map<number, number>(); // driverNumber → gridPosition
+  if (raceGridRaw.length > 0) {
+    for (const g of raceGridRaw) gridMap.set(g.driver_number, g.position ?? 20);
+  } else {
+    // Fallback: use qualifying final positions as grid positions
+    for (const q of qualifyingResults) {
+      if (q.finalPosition != null) {
+        gridMap.set(q.driverNumber, q.finalPosition);
+      }
+    }
+  }
+
+  // 4. Fastest lap — driver with minimum valid lap_duration
+  const fastestLapDriver = findFastestLapDriver(raceLaps);
+
+  // 5. Build race driver results
   const raceDriverResults: RaceDriverResult[] = raceResults.map((r: any) => ({
     driverNumber:   r.driver_number,
     teamName:       driverTeamMap.get(r.driver_number) ?? 'Unknown',
-    finishPosition: normaliseStatus(r.status) === 'Finished' ? r.position : null,
+    finishPosition: normaliseStatus(r) === 'Finished' ? r.position : null,
     startPosition:  gridMap.get(r.driver_number) ?? 20,
-    status:         normaliseStatus(r.status),
-    fastestLap:     !!r.is_fastest_lap || !!r.fastest_lap,
+    status:         normaliseStatus(r),
+    fastestLap:     r.driver_number === fastestLapDriver,
   }));
 
-  // 4. Pit data
+  // 6. Pit data
   const pitByDriver = new Map<number, number[]>();
   for (const p of pitStopsRaw) {
     if (p.pit_duration == null) continue;
@@ -219,29 +254,23 @@ export async function buildRaceWeekendData(
     pitStops:     pitByDriver.get(d.driver_number) ?? [],
   }));
 
-  // 5. Car finish data for power units
+  // 7. Car finish data for power units
   const carFinishData: CarFinishData[] = raceResults.map((r: any) => ({
     driverNumber:   r.driver_number,
     manufacturer:   powerUnitMap[driverTeamMap.get(r.driver_number) ?? ''] ?? 'Unknown',
-    finishPosition: normaliseStatus(r.status) === 'Finished' ? r.position : null,
+    finishPosition: normaliseStatus(r) === 'Finished' ? r.position : null,
   }));
 
-  // 6. Principal results — group by team
+  // 8. Principal results — group by team
   const teamDrivers = new Map<string, { finish: number | null; qual: number | null }[]>();
   for (const r of raceResults) {
     const team = driverTeamMap.get(r.driver_number) ?? 'Unknown';
     const arr  = teamDrivers.get(team) ?? [];
     arr.push({
-      finish: normaliseStatus(r.status) === 'Finished' ? r.position : null,
+      finish: normaliseStatus(r) === 'Finished' ? r.position : null,
       qual:   null, // filled after qualifying
     });
     teamDrivers.set(team, arr);
-  }
-
-  // 7. Qualifying results
-  let qualifyingResults: QualifyingDriverResult[] = [];
-  if (qualSessions.length > 0) {
-    qualifyingResults = await buildQualifyingResults(qualSessions, driverTeamMap);
   }
 
   // Attach qualifying positions to team driver entries
@@ -269,21 +298,36 @@ export async function buildRaceWeekendData(
     }
   }
 
-  // 8. Sprint results (optional)
+  // 9. Sprint results (optional)
   let sprintResults: SprintResult[] | undefined;
   if (sprintSession) {
-    const [sprintRaw, sprintGrid] = await Promise.all([
+    const [sprintRaw, sprintGridRaw] = await Promise.all([
       fetchSessionResult(sprintSession.session_key),
       fetchStartingGrid(sprintSession.session_key),
     ]);
+
+    // Sprint qualifying positions as fallback if sprint grid is empty
+    let sprintQualPositions: Map<number, number> | null = null;
+    if (sprintGridRaw.length === 0) {
+      const sprintQualSession = allSessions.find(s => /sprint.*qual/i.test(s.session_name));
+      if (sprintQualSession) {
+        const sqResults = await fetchSessionResult(sprintQualSession.session_key);
+        sprintQualPositions = new Map(sqResults.map((r: any) => [r.driver_number, r.position]));
+      }
+    }
+
     const sprintGridMap = new Map<number, number>();
-    for (const g of sprintGrid) sprintGridMap.set(g.driver_number, g.position ?? 20);
+    if (sprintGridRaw.length > 0) {
+      for (const g of sprintGridRaw) sprintGridMap.set(g.driver_number, g.position ?? 20);
+    } else if (sprintQualPositions) {
+      for (const [dn, pos] of sprintQualPositions) sprintGridMap.set(dn, pos);
+    }
 
     sprintResults = sprintRaw.map((r: any) => ({
       driverNumber:   r.driver_number,
-      finishPosition: normaliseStatus(r.status) === 'Finished' ? r.position : null,
+      finishPosition: normaliseStatus(r) === 'Finished' ? r.position : null,
       startPosition:  sprintGridMap.get(r.driver_number) ?? 20,
-      status:         normaliseStatus(r.status),
+      status:         normaliseStatus(r),
     }));
   }
 
