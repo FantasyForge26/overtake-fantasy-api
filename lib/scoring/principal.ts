@@ -1,11 +1,11 @@
-const QUALIFYING_STREAK_BONUS = 5.00;
-const RACE_STREAK_BONUS       = 7.50;
+const QUALIFYING_STREAK_BONUS = 15.00;
+const RACE_STREAK_BONUS       = 22.50;
 const STREAK_LENGTH           = 3;
 
 // Combined place ranges from 2 (both P1) to 44 (both P22/DNF).
-// Formula: 25 - ((combinedPlace - 2) * (24.75 / 42)), floored at 0.
+// Formula: 75 - ((combinedPlace - 2) * (74.25 / 42)), floored at 0.
 function combinedPlaceBonus(combinedPlace: number): number {
-  const pts = 25 - ((combinedPlace - 2) * (24.75 / 42));
+  const pts = 75 - ((combinedPlace - 2) * (74.25 / 42));
   return Math.round(Math.max(0, pts) * 100) / 100;
 }
 
