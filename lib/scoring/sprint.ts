@@ -1,15 +1,15 @@
 const SPRINT_POSITION_BONUS: Record<number, number> = {
-   1: 7.00,  2: 6.70,  3: 6.40,  4: 6.10,  5: 5.80,
-   6: 5.50,  7: 5.20,  8: 4.90,  9: 4.60, 10: 4.30,
-  11: 4.00, 12: 3.70, 13: 3.40, 14: 3.10, 15: 2.80,
-  16: 2.50, 17: 2.20, 18: 1.90, 19: 1.60, 20: 1.30,
-  21: 1.00, 22: 0.70,
+   1: 6.23,  2: 5.98,  3: 5.70,  4: 5.43,  5: 5.16,
+   6: 4.90,  7: 4.63,  8: 4.36,  9: 4.09, 10: 3.83,
+  11: 3.56, 12: 3.29, 13: 3.03, 14: 2.76, 15: 2.49,
+  16: 2.23, 17: 1.96, 18: 1.69, 19: 1.42, 20: 1.16,
+  21: 0.89, 22: 0.62,
 };
 
-const FINISHED_BONUS       = 0.70;
-const DSQ_PENALTY          = -4;
-const POSITIONS_GAINED_PTS = 0.35;
-const POSITIONS_LOST_PTS   = -0.09;
+const FINISHED_BONUS       = 0.62;
+const DSQ_PENALTY          = -3.56;
+const POSITIONS_GAINED_PTS = 0.31;
+const POSITIONS_LOST_PTS   = -0.08;
 
 export interface SprintResult {
   driverNumber:  number;
