@@ -6,17 +6,17 @@ import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/
 import { calculateOTFRating } from '@/lib/otf-calculator';
 
 const POWER_UNIT_MAP: Record<string, string> = {
-  'Red Bull Racing': 'ford-red-bull',
-  'Racing Bulls':    'ford-red-bull',
-  'Cadillac':        'ford-red-bull',
-  'Mercedes':        'mercedes-amg',
-  'McLaren':         'mercedes-amg',
-  'Williams':        'mercedes-amg',
-  'Ferrari':         'ferrari',
-  'Haas':            'ferrari',
-  'Aston Martin':    'honda',
-  'Alpine':          'renault',
-  'Audi':            'audi',
+  'Red Bull Racing': 'Ford Red Bull Powertrains',
+  'Racing Bulls':    'Ford Red Bull Powertrains',
+  'Cadillac':        'General Motors',
+  'Mercedes':        'Mercedes',
+  'McLaren':         'Mercedes',
+  'Williams':        'Mercedes',
+  'Ferrari':         'Ferrari',
+  'Haas':            'Ferrari',
+  'Aston Martin':    'Honda',
+  'Alpine':          'Renault',
+  'Audi':            'Audi',
 };
 
 function pitCrewCarNumber(slug: string): number {
