@@ -196,17 +196,12 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
       historicalSeasons,
     });
 
-    console.log('[trace]', asset.assetType, asset.name || asset.slug, 'oldTotal:', asset.totalPoints, 'score:', score, 'newTotal:', newTotal);
-
     await Asset.findByIdAndUpdate(asset._id, {
       totalPoints:      newTotal,
       racesCompleted:   newRaces,
       avgPointsPerRace: newAvg,
       otfRating:        newOtfRating,
     });
-
-    const verifyDoc = await Asset.findById(asset._id).lean() as any;
-    console.log('[trace] verify after write:', asset.slug, 'DB now has:', verifyDoc?.totalPoints);
 
     assetUpdates.push(asset.slug);
   }
