@@ -315,6 +315,7 @@ const RaceCalendarSchema = new Schema({
   isSprint:          { type: Boolean, default: false },
   cancelled:         { type: Boolean, default: false },
   meetingKey:        { type: Number, default: null, index: true },
+  processed:         { type: Boolean, default: false, index: true },
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
