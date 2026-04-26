@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { RaceResult, Asset, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 import { FINISH_POINTS, calculateDriverQualifyingScore } from '@/lib/otf-calculator';
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -27,10 +28,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) return NextResponse.json({ error: 'slug is required' }, { status: 400 });
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const asset = await Asset.findOne({ slug }).lean() as any;
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });

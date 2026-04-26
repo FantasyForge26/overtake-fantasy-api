@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Roster, PerformanceSelection, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { firstSessionLockTime } from '@/lib/race-calendar-helpers';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -16,6 +17,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id: leagueId } = await params;
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const now = new Date();
 
@@ -86,6 +91,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { round, driver1Boost, driver2Boost, pitCrew1Boost, pitCrew2Boost } = await req.json();
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const race = await RaceCalendar.findOne({ season: 2026, round, cancelled: false });
   if (!race) {

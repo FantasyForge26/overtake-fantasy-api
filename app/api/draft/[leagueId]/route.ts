@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { DraftSession, Asset, User } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 export async function GET(
   req: NextRequest,
@@ -15,8 +16,13 @@ export async function GET(
   }
 
   const { leagueId } = await params;
+  const userId = (session.user as any).id as string;
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const draftSession = await DraftSession.findOne({ leagueId, status: { $in: ['active', 'pending'] } })
     .populate('availableAssetIds');

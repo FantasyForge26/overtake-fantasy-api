@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { League, Roster, Asset, RaceResult, PerformanceSelection, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 import {
   calculateDriverRaceScore,
   calculatePrincipalScore,
@@ -18,9 +19,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
   const round = parseInt(req.nextUrl.searchParams.get('round') ?? '0', 10);
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const result = await RaceResult.findOne({ leagueId, season: 2026, round });
   return NextResponse.json(result ?? null);

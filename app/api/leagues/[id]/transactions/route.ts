@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { DraftSession, Transaction, User, Asset } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -12,8 +13,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const [draftSession, txDocs] = await Promise.all([
     DraftSession.findOne({ leagueId }).lean() as any,

@@ -10,8 +10,11 @@ export async function POST(req: NextRequest) {
 
     const { leagueId, enabled, targetUserId } = await req.json();
 
-    // Use targetUserId if provided (for marking CPU users), otherwise use the caller's id
-    const userId = targetUserId ?? session.user.id;
+    if (targetUserId && targetUserId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const userId = session.user.id;
 
     await connectDB();
 

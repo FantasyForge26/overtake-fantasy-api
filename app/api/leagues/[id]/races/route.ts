@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'Australia':    '🇦🇺',
@@ -35,7 +36,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
+
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const races = await RaceCalendar.find({ season: 2026 }).sort({ round: 1 }).lean();
 

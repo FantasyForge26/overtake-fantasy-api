@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 const ASSET_FIELDS = 'name team teamColor teamColorSecondary assetType carNumber nationality slug illustrationUrl otfRating totalPoints avgPointsPerRace racesCompleted dnfCount podiums wins fastestStopCount avgPitStopTime avgFinishPosition age debutYear teammateName qualifyingRaces q2Count q3Count';
 
@@ -25,6 +26,10 @@ export async function GET(
   const targetUserId = req.nextUrl.searchParams.get('userId') ?? userId;
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const roster = await Roster.findOne({ leagueId, userId: targetUserId })
     .populate('driver1AssetId', ASSET_FIELDS)

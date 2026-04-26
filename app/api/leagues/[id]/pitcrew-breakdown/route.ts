@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, RaceResult, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 import { calculatePitCrewScore } from '@/lib/otf-calculator';
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -21,10 +22,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) return NextResponse.json({ error: 'slug is required' }, { status: 400 });
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const pitCrew = await Asset.findOne({ slug, assetType: 'pitCrew' }).lean() as any;
   if (!pitCrew) return NextResponse.json({ error: 'Pit crew not found' }, { status: 404 });

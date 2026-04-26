@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { ChatMessage } from '@/lib/models';
+import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -41,7 +42,13 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id: leagueId } = await params;
+  const userId = (session.user as any).id as string;
+
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const messages = await ChatMessage.find({ leagueId }).sort({ createdAt: 1 }).lean();
   return NextResponse.json(messages.map(serializeMessage));
@@ -65,6 +72,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   const userInitials = userName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const doc = await ChatMessage.create({
     leagueId,
@@ -96,6 +107,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const userId = user.id ?? user._id ?? user.sub ?? '';
 
   await connectDB();
+
+  if (!(await verifyLeagueMembership(leagueId, userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const msg = await ChatMessage.findOne({ _id: messageId, leagueId });
   if (!msg) return NextResponse.json({ error: 'Message not found' }, { status: 404 });
