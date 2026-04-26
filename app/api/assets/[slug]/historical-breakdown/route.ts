@@ -16,8 +16,8 @@ export async function GET(
   const seasonParam = req.nextUrl.searchParams.get('season');
   const season = seasonParam ? parseInt(seasonParam, 10) : null;
 
-  if (season !== 2024 && season !== 2025) {
-    return NextResponse.json({ error: 'season must be 2024 or 2025' }, { status: 400 });
+  if (season !== 2023 && season !== 2024 && season !== 2025) {
+    return NextResponse.json({ error: 'season must be 2023, 2024, or 2025' }, { status: 400 });
   }
 
   await connectDB();
