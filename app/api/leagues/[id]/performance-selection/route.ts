@@ -5,6 +5,10 @@ import { connectDB } from '@/lib/db';
 import { Roster, PerformanceSelection, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 
+function lockTime(raceDate: Date): Date {
+  return new Date(raceDate.getTime() - 5 * 60 * 1000);
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
   if (!session?.user) {
@@ -28,7 +32,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'No upcoming race found' }, { status: 404 });
   }
 
-  const isLocked = now >= new Date(upcomingRace.selectionDeadline);
+  const raceLockTime = lockTime(new Date(upcomingRace.raceDate));
+  const isLocked = now >= raceLockTime;
 
   const [roster, existingSelection, seasonSelections] = await Promise.all([
     Roster.findOne({ leagueId, userId }),
@@ -41,15 +46,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const pitCrew1BoostCount = seasonSelections.filter((s: any) => s.pitCrew1Boost).length;
   const pitCrew2BoostCount = seasonSelections.filter((s: any) => s.pitCrew2Boost).length;
 
-  // Remaining races = races not yet scored (raceDate in the future)
   const remainingRaces = await RaceCalendar.countDocuments({
     season: 2026,
     cancelled: false,
     raceDate: { $gt: now },
   });
 
-  // Split remaining races between slot 1 and slot 2.
-  // If odd number, slot 1 gets the higher number.
   const maxBoostsSlot1 = Math.ceil(remainingRaces / 2);
   const maxBoostsSlot2 = Math.floor(remainingRaces / 2);
 
@@ -58,6 +60,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     selection: existingSelection,
     roster,
     isLocked,
+    lockTime: raceLockTime.toISOString(),
+    autoFilled: (existingSelection as any)?.autoFilled ?? false,
     boostCounts: {
       driver1: driver1BoostCount,
       driver2: driver2BoostCount,
@@ -91,8 +95,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Race not found' }, { status: 404 });
   }
 
-  if (new Date() >= new Date(race.selectionDeadline)) {
-    return NextResponse.json({ error: 'Selection deadline has passed' }, { status: 400 });
+  // Lock check: 5 minutes before race start
+  if (new Date() >= lockTime(new Date(race.raceDate))) {
+    return NextResponse.json(
+      { error: 'Boost selection deadline has passed. Selections are now locked.' },
+      { status: 403 },
+    );
   }
 
   const roster = await Roster.findOne({ leagueId, userId });
@@ -124,6 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         pitCrew2Boost: pitCrew2Boost ?? null,
         submittedAt: new Date(),
         locked: false,
+        autoFilled: false,
       },
     },
     { upsert: true, new: true },

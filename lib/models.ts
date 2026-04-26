@@ -294,6 +294,7 @@ const PerformanceSelectionSchema = new Schema({
   pitCrew2BoostCount: { type: Number, default: 0 },
   submittedAt:        { type: Date },
   locked:             { type: Boolean, default: false },
+  autoFilled:         { type: Boolean, default: false },
 });
 
 PerformanceSelectionSchema.index({ leagueId: 1, userId: 1, season: 1, round: 1 }, { unique: true });
@@ -314,8 +315,9 @@ const RaceCalendarSchema = new Schema({
   selectionDeadline: { type: Date, required: true },
   isSprint:          { type: Boolean, default: false },
   cancelled:         { type: Boolean, default: false },
-  meetingKey:        { type: Number, default: null, index: true },
-  processed:         { type: Boolean, default: false, index: true },
+  meetingKey:           { type: Number, default: null, index: true },
+  processed:            { type: Boolean, default: false, index: true },
+  boostLockProcessed:   { type: Boolean, default: false },
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
