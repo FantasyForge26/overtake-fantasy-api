@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     result = await processRace(meetingKey);
   } catch (err: any) {
     await ProcessedRace.deleteOne({ _id: lock._id });
-    return NextResponse.json({ error: `OpenF1 fetch failed: ${err.message}` }, { status: 502 });
+    return NextResponse.json({ error: 'Scoring failed. Check server logs.' }, { status: 502 });
   }
 
   return NextResponse.json({

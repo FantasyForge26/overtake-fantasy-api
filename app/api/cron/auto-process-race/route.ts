@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     } catch (err: any) {
       // Release lock so it can be retried
       await ProcessedRace.deleteOne({ meetingKey: calendar.meetingKey });
-      return NextResponse.json({ error: `Scoring failed: ${err.message}` }, { status: 502 });
+      return NextResponse.json({ error: 'Scoring failed. Check server logs.' }, { status: 502 });
     }
 
     // Mark calendar as processed
