@@ -89,6 +89,12 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
   const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).lean();
   const assetById = new Map<string, any>(allAssets.map(a => [a._id.toString(), a]));
 
+  // 5b. Build qualifying result lookup by driver number (for q-stage tracking)
+  const qualByDriverNum = new Map<number, import('@/lib/scoring/qualifying').QualifyingDriverResult>();
+  for (const qr of weekendData.qualifyingResults) {
+    qualByDriverNum.set(qr.driverNumber, qr);
+  }
+
   // 6. Score each league's rosters
   const activeLeagues = await League.find({ status: 'active' });
   let rostersUpdated = 0;
@@ -196,12 +202,27 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
       historicalSeasons,
     });
 
-    await Asset.findByIdAndUpdate(asset._id, {
-      totalPoints:      newTotal,
-      racesCompleted:   newRaces,
-      avgPointsPerRace: newAvg,
-      otfRating:        newOtfRating,
-    });
+    // For drivers, also track qualifying stage counts
+    if (asset.assetType === 'driver' && asset.carNumber) {
+      const qr = qualByDriverNum.get(asset.carNumber);
+      const qInc: Record<string, number> = {};
+      if (qr) {
+        qInc.qualifyingRaces = 1;
+        if (qr.reachedQ3)       qInc.q3Count = 1;
+        else if (qr.reachedQ2)  qInc.q2Count = 1;
+      }
+      await Asset.findByIdAndUpdate(asset._id, {
+        $set: { totalPoints: newTotal, racesCompleted: newRaces, avgPointsPerRace: newAvg, otfRating: newOtfRating },
+        ...(Object.keys(qInc).length ? { $inc: qInc } : {}),
+      });
+    } else {
+      await Asset.findByIdAndUpdate(asset._id, {
+        totalPoints:      newTotal,
+        racesCompleted:   newRaces,
+        avgPointsPerRace: newAvg,
+        otfRating:        newOtfRating,
+      });
+    }
 
     assetUpdates.push(asset.slug);
   }
