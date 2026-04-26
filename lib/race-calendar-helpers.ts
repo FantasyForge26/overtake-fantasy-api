@@ -54,3 +54,22 @@ export async function findMeetingKeyForDate(
 
   return null;
 }
+
+/**
+ * Returns the lock time for boost selections: 5 minutes before the earliest
+ * scoring session of the race weekend. For sprint weekends this is the earlier
+ * of qualifyingDate and sprintDate; for standard weekends it is qualifyingDate.
+ */
+export function firstSessionLockTime(race: {
+  raceDate:      Date | string;
+  qualifyingDate: Date | string;
+  sprintDate?:   Date | string | null;
+  isSprint?:     boolean;
+}): Date {
+  const dates = [new Date(race.qualifyingDate)];
+  if (race.isSprint && race.sprintDate) {
+    dates.push(new Date(race.sprintDate));
+  }
+  const earliest = new Date(Math.min(...dates.map(d => d.getTime())));
+  return new Date(earliest.getTime() - 5 * 60 * 1000);
+}

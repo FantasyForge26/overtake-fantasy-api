@@ -4,10 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Roster, PerformanceSelection, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-
-function lockTime(raceDate: Date): Date {
-  return new Date(raceDate.getTime() - 5 * 60 * 1000);
-}
+import { firstSessionLockTime } from '@/lib/race-calendar-helpers';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -32,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'No upcoming race found' }, { status: 404 });
   }
 
-  const raceLockTime = lockTime(new Date(upcomingRace.raceDate));
+  const raceLockTime = firstSessionLockTime(upcomingRace);
   const isLocked = now >= raceLockTime;
 
   const [roster, existingSelection, seasonSelections] = await Promise.all([
@@ -95,8 +92,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Race not found' }, { status: 404 });
   }
 
-  // Lock check: 5 minutes before race start
-  if (new Date() >= lockTime(new Date(race.raceDate))) {
+  // Lock check: 5 minutes before earliest scoring session
+  if (new Date() >= firstSessionLockTime(race)) {
     return NextResponse.json(
       { error: 'Boost selection deadline has passed. Selections are now locked.' },
       { status: 403 },

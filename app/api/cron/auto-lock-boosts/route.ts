@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { RaceCalendar, PerformanceSelection, Roster } from '@/lib/models';
+import { firstSessionLockTime } from '@/lib/race-calendar-helpers';
 
 export async function GET(req: NextRequest) {
   const authHeader  = req.headers.get('authorization');
@@ -12,16 +13,23 @@ export async function GET(req: NextRequest) {
 
   await connectDB();
 
-  const now     = new Date();
-  const nowPlus = new Date(now.getTime() + 5 * 60 * 1000); // now + 5 min
+  const now      = new Date();
+  const nowMinus = new Date(now.getTime() - 5 * 60 * 1000); // now - 5 min (lock window start)
 
-  // Find a race whose lock window is active: lockTime (raceDate - 5min) <= now < raceDate
-  // Equivalently: now <= raceDate < now + 5min
-  const race = await RaceCalendar.findOne({
+  // Query candidates: unprocessed races whose qualifying session starts within the next hour.
+  // We can't query by computed firstSessionLockTime directly, so we fetch a small window
+  // and filter in memory.
+  const candidates = await RaceCalendar.find({
     cancelled:          false,
     boostLockProcessed: { $ne: true },
-    raceDate:           { $gt: now, $lte: nowPlus },
-  }).sort({ round: 1 }).lean() as any;
+    qualifyingDate:     { $gt: nowMinus, $lte: new Date(now.getTime() + 60 * 60 * 1000) },
+  }).sort({ round: 1 }).lean() as any[];
+
+  // Find the first race whose firstSessionLockTime falls in (nowMinus, now]
+  const race = candidates.find((r: any) => {
+    const lt = firstSessionLockTime(r);
+    return lt > nowMinus && lt <= now;
+  }) ?? null;
 
   if (!race) {
     return NextResponse.json({ skipped: true, reason: 'No race in lock window' });
