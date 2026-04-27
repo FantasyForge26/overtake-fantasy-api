@@ -249,26 +249,46 @@ export interface AssetForOTF {
 // Historical season weights — excludes 2026 (current season handled separately)
 const SEASON_WEIGHTS: Record<number, number> = { 2025: 0.50, 2024: 0.30, 2023: 0.20 };
 
-// Max realistic avgPointsPerRace per asset type (used to normalise to 0-100)
-const MAX_PTS_PER_RACE: Record<string, number> = {
-  driver:    25,
-  pitCrew:   50,
-  powerUnit: 25,
-  principal: 50,
+// Asset-type ceilings — hierarchy: Driver > Principal > Pit Crew > Power Unit
+const OTF_CEILING: Record<string, number> = {
+  driver:    99,
+  principal: 85,
+  pitCrew:   83,
+  powerUnit: 75,
 };
 
-function seasonNormalisedScore(s: HistoricalSeasonForOTF, assetType: string): number {
-  const maxPts = MAX_PTS_PER_RACE[assetType] ?? 30;
-  const baseScore = Math.min((s.avgPointsPerRace / maxPts) * 100, 100);
+// Performance score: piecewise linear interpolation over empirical anchor points
+function performanceScore(
+  avgPointsPerRace: number,
+  assetType: 'driver' | 'principal' | 'pitCrew' | 'powerUnit',
+): number {
+  const anchors: Record<string, [number, number][]> = {
+    driver:    [[0, 30], [10, 50], [20, 65], [30, 78], [40, 86], [50, 92], [60, 96], [75, 99]],
+    principal: [[0, 30], [10, 50], [25, 70], [40, 80], [55, 85]],
+    pitCrew:   [[0, 30], [10, 50], [25, 70], [35, 80], [45, 83]],
+    powerUnit: [[0, 30], [5, 50], [10, 65], [15, 72], [20, 75]],
+  };
 
-  if (assetType === 'driver') {
-    const winsBonus = Math.min(s.wins * 5, 20);
-    const q3Rate    = s.qualifyingRaces > 0 ? s.q3Count / s.qualifyingRaces : 0;
-    const q3Bonus   = q3Rate * 10;
-    return Math.min(baseScore + winsBonus + q3Bonus, 100);
+  const pts = anchors[assetType];
+  if (avgPointsPerRace <= pts[0][0]) return pts[0][1];
+  if (avgPointsPerRace >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[i + 1];
+    if (avgPointsPerRace >= x1 && avgPointsPerRace <= x2) {
+      const ratio = (avgPointsPerRace - x1) / (x2 - x1);
+      return y1 + ratio * (y2 - y1);
+    }
   }
+  return pts[pts.length - 1][1];
+}
 
-  return baseScore;
+function seasonNormalisedScore(s: HistoricalSeasonForOTF, assetType: string): number {
+  return performanceScore(
+    s.avgPointsPerRace,
+    assetType as 'driver' | 'principal' | 'pitCrew' | 'powerUnit',
+  );
 }
 
 function calculateHistoricalWeightedScore(
@@ -293,83 +313,43 @@ function calculateHistoricalWeightedScore(
   return weightedSum / totalWeight;
 }
 
-function calculateChampionBonus(asset: AssetForOTF): number {
-  // +2 per WDC/WCC win in historical seasons, capped at +8
-  const seasonWins = (asset.historicalSeasons ?? [])
-    .reduce((sum, s) => sum + (s.championshipWins ?? 0), 0);
-  const seasonBonus = Math.min(seasonWins * 2, 8);
-
-  // +1.5 per career championship win on the asset, capped at +6
-  const careerBonus = Math.min((asset.championshipWins ?? 0) * 1.5, 6);
-
-  return Math.min(seasonBonus + careerBonus, 10);
-}
-
 export function calculateOTFRating(asset: AssetForOTF): number {
-  const assetType     = asset.assetType ?? 'driver';
-  const maxPtsPerRace = MAX_PTS_PER_RACE[assetType] ?? 25;
+  const assetType = (asset.assetType ?? 'driver') as 'driver' | 'principal' | 'pitCrew' | 'powerUnit';
+  const ceiling   = OTF_CEILING[assetType] ?? 99;
 
-  // Historical score only uses past seasons (2023/2024/2025), not current 2026
+  // Historical score — past seasons only (2023/2024/2025)
   const pastSeasons = (asset.historicalSeasons ?? []).filter(s => s.season < 2026);
   const historicalScore = pastSeasons.length
     ? calculateHistoricalWeightedScore(pastSeasons, assetType)
     : null;
 
-  const championBonus = calculateChampionBonus(asset);
+  const races = asset.racesCompleted;
+  const perfScore = performanceScore(asset.avgPointsPerRace, assetType);
+  const baseScore = asset.otfBaseRating; // already 0-100, do not re-curve
 
-  let rating: number;
-  const hasCurrentData = asset.racesCompleted >= 2;
+  // Weights by race count: [wPerf, wHist, wBase]
+  let wPerf: number, wHist: number, wBase: number;
 
-  if (!hasCurrentData) {
-    // Fewer than 2 races — treat as no current season data
-    if (historicalScore !== null) {
-      rating = 0.60 * asset.otfBaseRating + 0.40 * historicalScore;
-    } else {
-      rating = asset.otfBaseRating;
-    }
+  if (races === 0) {
+    wPerf = 0.00; wHist = 0.25; wBase = 0.75;
+  } else if (races <= 2) {
+    wPerf = 0.25; wHist = 0.25; wBase = 0.50;
+  } else if (races <= 5) {
+    wPerf = 0.65; wHist = 0.20; wBase = 0.15;
+  } else if (races <= 15) {
+    wPerf = 0.75; wHist = 0.15; wBase = 0.10;
   } else {
-    const currentSeasonScore = Math.min((asset.avgPointsPerRace / maxPtsPerRace) * 100, 100);
-    const races = asset.racesCompleted;
-
-    let wBase: number, wHistorical: number, wCurrent: number;
-
-    if (races <= 5) {
-      wBase       = 0.60;
-      wHistorical = 0.25;
-      wCurrent    = 0.15;
-    } else if (races <= 12) {
-      wBase       = 0.40;
-      wHistorical = 0.30;
-      wCurrent    = 0.30;
-    } else {
-      wBase       = 0.20;
-      wHistorical = 0.30;
-      wCurrent    = 0.50;
-    }
-
-    if (historicalScore !== null) {
-      rating = wBase * asset.otfBaseRating
-             + wHistorical * historicalScore
-             + wCurrent * currentSeasonScore;
-    } else {
-      rating = (wBase + wHistorical) * asset.otfBaseRating
-             + wCurrent * currentSeasonScore;
-    }
-
-    // Overperformance / underperformance adjustment (requires ≥2 races)
-    if (asset.racesCompleted >= 2) {
-      const actualCurrentScore = Math.min((asset.avgPointsPerRace / maxPtsPerRace) * 100, 100);
-      const delta = actualCurrentScore - asset.otfBaseRating;
-      if (delta > 10) {
-        rating += Math.min(delta * 0.3, 8);
-      } else if (delta < -10) {
-        rating += Math.max(delta * 0.2, -6);
-      }
-    }
+    wPerf = 0.85; wHist = 0.10; wBase = 0.05;
   }
 
-  // Historical data cannot push rating more than 6 points above otfBaseRating
-  rating = Math.min(rating, asset.otfBaseRating + 6);
+  let rating: number;
 
-  return Math.min(99, Math.max(1, Math.round(rating + championBonus)));
+  if (historicalScore !== null) {
+    rating = wPerf * perfScore + wHist * historicalScore + wBase * baseScore;
+  } else {
+    // No historical data — redistribute hist weight into base
+    rating = wPerf * perfScore + (wHist + wBase) * baseScore;
+  }
+
+  return Math.round(Math.min(rating, ceiling));
 }
