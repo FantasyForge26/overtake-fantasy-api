@@ -1,3 +1,34 @@
+import { calculateDriverSprintQualifyingScore } from '@/lib/otf-calculator';
+
+// ---------------------------------------------------------------------------
+// Sprint Qualifying
+// ---------------------------------------------------------------------------
+
+export interface SprintQualiResult {
+  driverNumber: number;
+  position:     number;
+}
+
+export interface SprintQualiScore {
+  driverNumber: number;
+  total:        number;
+}
+
+export function calculateSprintQualiScore(result: SprintQualiResult): SprintQualiScore {
+  return {
+    driverNumber: result.driverNumber,
+    total:        calculateDriverSprintQualifyingScore(result.position),
+  };
+}
+
+export function calculateAllSprintQualiScores(results: SprintQualiResult[]): SprintQualiScore[] {
+  return results.map(calculateSprintQualiScore);
+}
+
+// ---------------------------------------------------------------------------
+// Sprint Race
+// ---------------------------------------------------------------------------
+
 const SPRINT_POSITION_BONUS: Record<number, number> = {
    1: 9.54,  2: 9.14,  3: 8.73,  4: 8.32,  5: 7.90,
    6: 7.51,  7: 7.09,  8: 6.68,  9: 6.26, 10: 5.87,

@@ -2,6 +2,7 @@ import {
   RaceWeekendData,
   QualifyingDriverResult,
   SprintResult,
+  SprintQualiResult,
   RaceDriverResult,
   PrincipalRaceResult,
   CarPitData,
@@ -305,26 +306,33 @@ export async function buildRaceWeekendData(
 
   // 9. Sprint results (optional)
   let sprintResults: SprintResult[] | undefined;
+  let sprintQualiResults: SprintQualiResult[] | undefined;
   if (sprintSession) {
-    const [sprintRaw, sprintGridRaw] = await Promise.all([
+    const sprintQualSession = allSessions.find(s => /sprint.*qual/i.test(s.session_name));
+
+    const [sprintRaw, sprintGridRaw, sqRaw] = await Promise.all([
       fetchSessionResult(sprintSession.session_key),
       fetchStartingGrid(sprintSession.session_key),
+      sprintQualSession ? fetchSessionResult(sprintQualSession.session_key) : Promise.resolve([]),
     ]);
 
-    // Sprint qualifying positions as fallback if sprint grid is empty
-    let sprintQualPositions: Map<number, number> | null = null;
-    if (sprintGridRaw.length === 0) {
-      const sprintQualSession = allSessions.find(s => /sprint.*qual/i.test(s.session_name));
-      if (sprintQualSession) {
-        const sqResults = await fetchSessionResult(sprintQualSession.session_key);
-        sprintQualPositions = new Map(sqResults.map((r: any) => [r.driver_number, r.position]));
-      }
+    // Always capture sprint qualifying positions for scoring
+    const sprintQualPositions = new Map<number, number>(
+      sqRaw.map((r: any) => [r.driver_number, r.position as number]),
+    );
+
+    if (sprintQualPositions.size > 0) {
+      sprintQualiResults = Array.from(sprintQualPositions.entries()).map(([driverNumber, position]) => ({
+        driverNumber,
+        position,
+      }));
     }
 
+    // Build sprint grid: prefer explicit grid, fall back to sprint quali positions
     const sprintGridMap = new Map<number, number>();
     if (sprintGridRaw.length > 0) {
       for (const g of sprintGridRaw) sprintGridMap.set(g.driver_number, g.position ?? 20);
-    } else if (sprintQualPositions) {
+    } else if (sprintQualPositions.size > 0) {
       for (const [dn, pos] of sprintQualPositions) sprintGridMap.set(dn, pos);
     }
 
@@ -343,6 +351,7 @@ export async function buildRaceWeekendData(
     hasSprint: !!sprintSession,
     qualifyingResults,
     sprintResults,
+    sprintQualiResults,
     raceResults:      raceDriverResults,
     principalResults,
     pitData,

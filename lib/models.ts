@@ -375,6 +375,11 @@ const HistoricalRaceBreakdownSchema = new Schema({
   pgScore:     { type: Number, default: 0 },
   tot:         { type: Number, default: 0 },
   dnf:         { type: Boolean, default: false },
+  // sprint weekend fields (undefined on non-sprint rounds)
+  sprintQualiPos:  { type: Number },
+  sprintQualiPts:  { type: Number, default: 0 },
+  sprintRacePos:   { type: Number },
+  sprintRacePts:   { type: Number, default: 0 },
   // principal-specific: driver finish positions
   driver1Pos:  { type: Number },
   driver2Pos:  { type: Number },

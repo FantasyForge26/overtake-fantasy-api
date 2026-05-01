@@ -1,4 +1,4 @@
-import { calculateAllSprintScores, SprintResult, SprintScore } from './sprint';
+import { calculateAllSprintScores, calculateAllSprintQualiScores, SprintResult, SprintScore, SprintQualiResult, SprintQualiScore } from './sprint';
 import { calculateAllQualifyingDriverScores, QualifyingDriverResult, QualifyingDriverScore } from './qualifying';
 import { calculateAllRaceDriverScores, RaceDriverResult, RaceDriverScore } from './race';
 import { calculateAllPrincipalScores, PrincipalRaceResult, PrincipalScore, PrincipalStreakState } from './principal';
@@ -7,6 +7,7 @@ import { calculatePowerUnitScores, CarFinishData, PowerUnitScore } from './power
 
 export type {
   SprintResult, SprintScore,
+  SprintQualiResult, SprintQualiScore,
   QualifyingDriverResult, QualifyingDriverScore,
   RaceDriverResult, RaceDriverScore,
   PrincipalRaceResult, PrincipalScore, PrincipalStreakState,
@@ -20,9 +21,10 @@ export interface RaceWeekendData {
   raceName:    string;
   hasSprint:   boolean;
 
-  qualifyingResults: QualifyingDriverResult[];
-  sprintResults?:    SprintResult[];
-  raceResults:       RaceDriverResult[];
+  qualifyingResults:  QualifyingDriverResult[];
+  sprintResults?:     SprintResult[];
+  sprintQualiResults?: SprintQualiResult[];
+  raceResults:        RaceDriverResult[];
 
   principalResults: PrincipalRaceResult[];
   pitData:          CarPitData[];
@@ -30,14 +32,15 @@ export interface RaceWeekendData {
 }
 
 export interface RaceWeekendScores {
-  sessionKey:  number;
-  raceName:    string;
-  qualifying:  QualifyingDriverScore[];
-  sprint?:     SprintScore[];
-  race:        RaceDriverScore[];
-  principals:  PrincipalScore[];
-  pitCrews:    PitCrewScore[];
-  powerUnits:  PowerUnitScore[];
+  sessionKey:   number;
+  raceName:     string;
+  qualifying:   QualifyingDriverScore[];
+  sprintQuali?: SprintQualiScore[];
+  sprint?:      SprintScore[];
+  race:         RaceDriverScore[];
+  principals:   PrincipalScore[];
+  pitCrews:     PitCrewScore[];
+  powerUnits:   PowerUnitScore[];
 }
 
 export function calculateRaceWeekendScores(
@@ -46,16 +49,25 @@ export function calculateRaceWeekendScores(
 ): { scores: RaceWeekendScores; newPrincipalStreakStates: Record<string, PrincipalStreakState> } {
   const qualifying = calculateAllQualifyingDriverScores(data.qualifyingResults);
 
+  const sprintQuali = data.hasSprint && data.sprintQualiResults
+    ? calculateAllSprintQualiScores(data.sprintQualiResults)
+    : undefined;
+
   const sprint = data.hasSprint && data.sprintResults
     ? calculateAllSprintScores(data.sprintResults)
     : undefined;
 
   const race = calculateAllRaceDriverScores(data.raceResults);
 
-  // Build driverNumber → total weekly fantasy points map (qual + sprint + race)
+  // Build driverNumber → total weekly fantasy points map (qual + sprintQuali + sprint + race)
   const driverWeeklyPoints = new Map<number, number>();
   for (const q of qualifying) {
     driverWeeklyPoints.set(q.driverNumber, (driverWeeklyPoints.get(q.driverNumber) ?? 0) + q.total);
+  }
+  if (sprintQuali) {
+    for (const sq of sprintQuali) {
+      driverWeeklyPoints.set(sq.driverNumber, (driverWeeklyPoints.get(sq.driverNumber) ?? 0) + sq.total);
+    }
   }
   if (sprint) {
     for (const s of sprint) {
@@ -108,9 +120,10 @@ export function calculateRaceWeekendScores(
 
   return {
     scores: {
-      sessionKey: data.sessionKey,
-      raceName:   data.raceName,
+      sessionKey:  data.sessionKey,
+      raceName:    data.raceName,
       qualifying,
+      sprintQuali,
       sprint,
       race,
       principals,

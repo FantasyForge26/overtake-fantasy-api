@@ -119,6 +119,25 @@ export function calculateDriverRaceScore(input: DriverRaceScoreInput): number {
 }
 
 // ---------------------------------------------------------------------------
+// Driver sprint qualifying score
+// ---------------------------------------------------------------------------
+
+/**
+ * Sprint Qualifying score — position-based, half of main qualifying rate.
+ * Formula: max(0, 8 - 0.5 * position)
+ * P1=7.5, P2=7.0, P3=6.5 ... P15=0.5, P16-P20=0
+ * Plus pole bonus of 0.25 (half of the 0.5 pt P1→P2 delta in main qualifying).
+ */
+export function calculateDriverSprintQualifyingScore(
+  sprintQualiPosition: number | null | undefined,
+): number {
+  if (sprintQualiPosition == null || sprintQualiPosition < 1 || sprintQualiPosition > 20) return 0;
+  const positionPts = Math.max(0, 8 - 0.5 * sprintQualiPosition);
+  const poleBonus   = sprintQualiPosition === 1 ? 0.25 : 0;
+  return Math.round((positionPts + poleBonus) * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
 // Driver sprint score
 // ---------------------------------------------------------------------------
 
