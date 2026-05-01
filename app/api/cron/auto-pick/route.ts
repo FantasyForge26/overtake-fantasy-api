@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
+import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
 
 function neededAssetTypes(roster: any): string[] {
   const needed: string[] = [];
@@ -73,9 +74,12 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    draftSession.currentPickStartedAt = new Date();
+    // Re-fetch session from DB in case the while loop advanced the in-memory index
+    // past full rosters (the DB still holds the original index at this point)
+    const freshSession = await DraftSession.findById(draftSession._id);
+    if (!freshSession || freshSession.status !== 'active') continue;
 
-    const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
+    const availableIds = freshSession.availableAssetIds.map((id: any) => id.toString());
 
     // Check queue first — pick the first queued asset whose type fills an open slot
     const draftQueue = await DraftQueue.findOne({ leagueId, userId });
@@ -103,79 +107,59 @@ export async function GET(req: NextRequest) {
     if (!bestAsset) continue;
 
     const assetType = bestAsset.assetType as string;
-    const assetId = bestAsset._id.toString();
+    const memberCount = freshSession.draftOrder.length / freshSession.totalRounds;
+    const pickIndex = freshSession.currentPickIndex;
+    const newPickIndex = pickIndex + 1;
+    const newRound = Math.floor(newPickIndex / memberCount) + 1;
 
-    // Mark user as auto-draft BEFORE saving so clients see it immediately
-    if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
-    if (!draftSession.autoDraftUserIds.includes(userId)) {
-      draftSession.autoDraftUserIds.push(userId);
-      draftSession.markModified('autoDraftUserIds');
+    // Mark user as auto-draft before claiming
+    if (!freshSession.autoDraftUserIds) freshSession.autoDraftUserIds = [];
+    if (!freshSession.autoDraftUserIds.includes(userId)) {
+      freshSession.autoDraftUserIds.push(userId);
+      freshSession.markModified('autoDraftUserIds');
+      await freshSession.save();
     }
 
-    // Record the pick
-    draftSession.picks.push({
-      pickNumber: draftSession.currentPickIndex + 1,
-      round: draftSession.currentRound,
-      userId,
+    const updatedSession = await atomicClaimAsset({
+      sessionId: freshSession._id,
       assetId: bestAsset._id,
-      assetType,
-      pickedAt: new Date(),
+      pickIndex,
+      newPickIndex,
+      newRound,
+      pickDoc: {
+        pickNumber: pickIndex + 1,
+        round: freshSession.currentRound,
+        userId,
+        assetId: bestAsset._id,
+        assetType,
+        pickedAt: new Date(),
+      },
     });
 
-    // Remove from available pool
-    draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
-      (id: any) => id.toString() !== assetId,
-    );
-    draftSession.markModified('availableAssetIds');
+    if (!updatedSession) continue; // lost the race — next cron run will handle it
 
-    // Update roster slot
-    if (assetType === 'driver') {
-      if (!roster.driver1AssetId) {
-        roster.driver1AssetId = bestAsset._id;
-      } else {
-        roster.driver2AssetId = bestAsset._id;
-      }
-    } else if (assetType === 'principal') {
-      roster.principalAssetId = bestAsset._id;
-    } else if (assetType === 'pitCrew') {
-      if (!roster.pitCrew1AssetId) {
-        roster.pitCrew1AssetId = bestAsset._id;
-      } else {
-        roster.pitCrew2AssetId = bestAsset._id;
-      }
-    } else if (assetType === 'powerUnit') {
-      roster.powerUnitAssetId = bestAsset._id;
-    }
-
-    roster.updatedAt = new Date();
-    await roster.save();
-
-    // Advance pick index
-    const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
-    draftSession.currentPickIndex += 1;
-    draftSession.currentRound = Math.floor(draftSession.currentPickIndex / memberCount) + 1;
-    draftSession.currentPickStartedAt = new Date();
+    await assignRosterSlot(leagueId, userId, bestAsset._id, assetType);
 
     // Check if draft is complete
-    if (draftSession.currentPickIndex >= draftSession.totalPicks) {
-      draftSession.status = 'completed';
-      draftSession.completedAt = new Date();
+    if (updatedSession.currentPickIndex >= updatedSession.totalPicks) {
+      updatedSession.status = 'completed';
+      updatedSession.completedAt = new Date();
       const league = await League.findById(leagueId);
       if (league) {
         league.status = 'active';
         await league.save();
       }
+      await updatedSession.save();
     }
 
-    await draftSession.save();
     processed++;
 
     // Push notifications
-    if (draftSession.status === 'completed') {
-      const allUserIds = draftSession.draftOrder.map((id: any) => id.toString());
+    if (updatedSession.status === 'completed') {
+      const allUserIds = updatedSession.draftOrder.map((id: any) => id.toString());
       sendPushToUsers(allUserIds, 'Draft complete! 🏁', 'Your team is set. Head to your paddock.', { screen: 'home', leagueId }, 'general').catch(() => {});
     } else {
-      const nextUserId = draftSession.draftOrder[draftSession.currentPickIndex]?.toString();
+      const nextUserId = updatedSession.draftOrder[updatedSession.currentPickIndex]?.toString();
       if (nextUserId) {
         sendPushToUser(nextUserId, "You're on the clock! 🏎", 'Make your draft pick now.', { screen: 'draft', leagueId }, 'draft_turn').catch(() => {});
       }

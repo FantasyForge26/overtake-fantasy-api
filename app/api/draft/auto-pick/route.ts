@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
 
 // Returns the assetType the drafter needs to fill next, in priority order
 function neededAssetType(roster: any, currentRound: number, totalRounds: number): string {
@@ -92,77 +93,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `No available ${assetType} asset found` }, { status: 400 });
   }
 
-  const assetId = bestAsset._id.toString();
-
-  // Record the pick
-  draftSession.picks.push({
-    pickNumber: draftSession.currentPickIndex + 1,
-    round: draftSession.currentRound,
-    userId,
-    assetId: bestAsset._id,
-    assetType,
-    pickedAt: new Date(),
-  });
-
-  // Remove from available pool
-  draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
-    (id: any) => id.toString() !== assetId,
-  );
-
-  // Update roster slot
-  if (assetType === 'driver') {
-    if (!roster.driver1AssetId) {
-      roster.driver1AssetId = bestAsset._id;
-    } else {
-      roster.driver2AssetId = bestAsset._id;
-    }
-  } else if (assetType === 'principal') {
-    roster.principalAssetId = bestAsset._id;
-  } else if (assetType === 'pitCrew') {
-    if (!roster.pitCrew1AssetId) {
-      roster.pitCrew1AssetId = bestAsset._id;
-    } else {
-      roster.pitCrew2AssetId = bestAsset._id;
-    }
-  } else if (assetType === 'powerUnit') {
-    roster.powerUnitAssetId = bestAsset._id;
-  }
-  roster.updatedAt = new Date();
-  await roster.save();
-
-  // Advance pick index
+  const pickIndex = draftSession.currentPickIndex;
   const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
-  // Mark user as auto-draft
+  const newPickIndex = pickIndex + 1;
+  const newRound = Math.floor(newPickIndex / memberCount) + 1;
+
+  // Mark user as auto-draft before claiming
   if (!draftSession.autoDraftUserIds) draftSession.autoDraftUserIds = [];
   if (!draftSession.autoDraftUserIds.includes(userId)) {
     draftSession.autoDraftUserIds.push(userId);
+    await draftSession.save();
   }
 
-  draftSession.currentPickIndex += 1;
-  draftSession.currentRound = Math.floor(draftSession.currentPickIndex / memberCount) + 1;
-  draftSession.currentPickStartedAt = new Date();
+  const updatedSession = await atomicClaimAsset({
+    sessionId: draftSession._id,
+    assetId: bestAsset._id,
+    pickIndex,
+    newPickIndex,
+    newRound,
+    pickDoc: {
+      pickNumber: pickIndex + 1,
+      round: draftSession.currentRound,
+      userId,
+      assetId: bestAsset._id,
+      assetType,
+      pickedAt: new Date(),
+    },
+  });
+
+  if (!updatedSession) {
+    return NextResponse.json({ error: 'Pick slot already taken — please retry' }, { status: 409 });
+  }
+
+  await assignRosterSlot(leagueId, userId, bestAsset._id, assetType);
 
   // Check if draft is complete
-  if (draftSession.currentPickIndex >= draftSession.totalPicks) {
-    draftSession.status = 'completed';
-    draftSession.completedAt = new Date();
-
+  if (updatedSession.currentPickIndex >= updatedSession.totalPicks) {
+    updatedSession.status = 'completed';
+    updatedSession.completedAt = new Date();
     const league = await League.findById(leagueId);
     if (league) {
       league.status = 'active';
       await league.save();
     }
+    await updatedSession.save();
   }
 
-  await draftSession.save();
-
   const nextDrafterId =
-    draftSession.status === 'completed'
+    updatedSession.status === 'completed'
       ? null
-      : draftSession.draftOrder[draftSession.currentPickIndex]?.toString() ?? null;
+      : updatedSession.draftOrder[updatedSession.currentPickIndex]?.toString() ?? null;
 
   return NextResponse.json({
-    ...draftSession.toObject(),
+    ...updatedSession.toObject(),
     currentDrafterId: nextDrafterId,
   });
 }

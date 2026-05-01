@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
+import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -49,86 +50,60 @@ export async function POST(req: NextRequest) {
 
   const assetType: string = asset.assetType;
 
-  // Record the pick
-  draftSession.picks.push({
-    pickNumber: draftSession.currentPickIndex + 1,
-    round: draftSession.currentRound,
-    userId,
-    assetId,
-    assetType,
-    pickedAt: new Date(),
+  const pickIndex = draftSession.currentPickIndex;
+  const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
+  const newPickIndex = pickIndex + 1;
+  const newRound = Math.floor(newPickIndex / memberCount) + 1;
+
+  const updatedSession = await atomicClaimAsset({
+    sessionId: draftSession._id,
+    assetId: asset._id,
+    pickIndex,
+    newPickIndex,
+    newRound,
+    pickDoc: {
+      pickNumber: pickIndex + 1,
+      round: draftSession.currentRound,
+      userId,
+      assetId: asset._id,
+      assetType,
+      pickedAt: new Date(),
+    },
   });
 
-  // Remove from available pool
-  draftSession.availableAssetIds = draftSession.availableAssetIds.filter(
-    (id: any) => id.toString() !== assetId,
-  );
-
-  // Update the roster slot
-  const roster = await Roster.findOne({ leagueId, userId });
-  console.log('[draft/pick] roster lookup — leagueId:', leagueId, 'userId:', userId);
-  console.log('[draft/pick] roster before save:', roster?.toObject() ?? null);
-
-  if (roster) {
-    if (assetType === 'driver') {
-      if (!roster.driver1AssetId) {
-        roster.driver1AssetId = assetId;
-      } else {
-        roster.driver2AssetId = assetId;
-      }
-    } else if (assetType === 'principal') {
-      roster.principalAssetId = assetId;
-    } else if (assetType === 'pitCrew') {
-      if (!roster.pitCrew1AssetId) {
-        roster.pitCrew1AssetId = assetId;
-      } else {
-        roster.pitCrew2AssetId = assetId;
-      }
-    } else if (assetType === 'powerUnit') {
-      roster.powerUnitAssetId = assetId;
-    }
-    roster.updatedAt = new Date();
-    await roster.save();
-    console.log('[draft/pick] roster after save:', roster.toObject());
-  } else {
-    console.warn('[draft/pick] roster NOT found for leagueId:', leagueId, 'userId:', userId);
+  if (!updatedSession) {
+    return NextResponse.json({ error: 'Asset already taken — please pick again' }, { status: 409 });
   }
 
-  // Advance pick index
-  const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
-  draftSession.currentPickIndex += 1;
-  draftSession.currentRound = Math.floor(draftSession.currentPickIndex / memberCount) + 1;
-  draftSession.currentPickStartedAt = new Date();
+  await assignRosterSlot(leagueId, userId, asset._id, assetType);
 
   // Check if draft is complete
-  if (draftSession.currentPickIndex >= draftSession.totalPicks) {
-    draftSession.status = 'completed';
-    draftSession.completedAt = new Date();
-
+  if (updatedSession.currentPickIndex >= updatedSession.totalPicks) {
+    updatedSession.status = 'completed';
+    updatedSession.completedAt = new Date();
     const league = await League.findById(leagueId);
     if (league) {
       league.status = 'active';
       await league.save();
     }
+    await updatedSession.save();
   }
 
-  await draftSession.save();
-
   const nextDrafterId =
-    draftSession.status === 'completed'
+    updatedSession.status === 'completed'
       ? null
-      : draftSession.draftOrder[draftSession.currentPickIndex]?.toString() ?? null;
+      : updatedSession.draftOrder[updatedSession.currentPickIndex]?.toString() ?? null;
 
   // Push notifications (fire and forget)
-  if (draftSession.status === 'completed') {
-    const allUserIds = draftSession.draftOrder.map((id: any) => id.toString());
+  if (updatedSession.status === 'completed') {
+    const allUserIds = updatedSession.draftOrder.map((id: any) => id.toString());
     sendPushToUsers(allUserIds, 'Draft complete! 🏁', 'Your team is set. Head to your paddock.', { screen: 'home', leagueId }, 'general').catch(() => {});
   } else if (nextDrafterId) {
     sendPushToUser(nextDrafterId, "You're on the clock! 🏎", 'Make your draft pick now.', { screen: 'draft', leagueId }, 'draft_turn').catch(() => {});
   }
 
   return NextResponse.json({
-    ...draftSession.toObject(),
+    ...updatedSession.toObject(),
     currentDrafterId: nextDrafterId,
   });
 }
