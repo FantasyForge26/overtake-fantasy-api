@@ -156,12 +156,23 @@ const ContractSchema = new Schema({
 // SeasonStanding
 // ---------------------------------------------------------------------------
 
+const ScoringEventSchema = new Schema({
+  event:  { type: String },
+  points: { type: Number },
+  at:     { type: Date },
+}, { _id: false });
+
 const RaceHistoryEntrySchema = new Schema({
-  raceIndex:        { type: Number },
-  raceName:         { type: String },
-  pointsThisRace:   { type: Number },
-  cumulativePoints: { type: Number },
-  rank:             { type: Number },
+  raceIndex:         { type: Number },
+  raceName:          { type: String },
+  pointsThisRace:    { type: Number },
+  cumulativePoints:  { type: Number },
+  rank:              { type: Number },
+  // Scoring breakdowns (populated incrementally as sessions are scored)
+  sprintQualiPoints: { type: Number, default: 0 },
+  sprintRacePoints:  { type: Number, default: 0 },
+  racePoints:        { type: Number, default: 0 },
+  scoringEvents:     [ScoringEventSchema],
 }, { _id: false });
 
 const SeasonStandingSchema = new Schema({
@@ -259,6 +270,12 @@ const PitCrewResultSchema = new Schema({
   fastestStopOverall: { type: Boolean, default: false },
 }, { _id: false });
 
+const SprintQualiResultEntrySchema = new Schema({
+  driverSlug: { type: String },
+  position:   { type: Number },
+  points:     { type: Number },
+}, { _id: false });
+
 const RaceResultSchema = new Schema({
   leagueId:      { type: Schema.Types.ObjectId, ref: 'League', required: true },
   season:        { type: Number, default: 2026 },
@@ -271,6 +288,10 @@ const RaceResultSchema = new Schema({
   qualifyingScored:  { type: Boolean, default: false },
   sprintScored:      { type: Boolean, default: false },
   raceScored:        { type: Boolean, default: false },
+  // Sprint qualifying (scored mid-weekend before sprint race)
+  sprintQualiScored:   { type: Boolean, default: false },
+  sprintQualiScoredAt: { type: Date },
+  sprintQualiResults:  [SprintQualiResultEntrySchema],
 });
 
 RaceResultSchema.index({ leagueId: 1, season: 1, round: 1 }, { unique: true });
@@ -324,6 +345,10 @@ const RaceCalendarSchema = new Schema({
   sprintQualifyingDate: { type: Date },
   cancelled2026:        { type: Boolean, default: false },
   sessionsBackfilledAt: { type: Date },
+  // Sprint qualifying scoring flag (global idempotency — RaceResult is per-league so flag lives here)
+  sprintQualiScored:    { type: Boolean, default: false },
+  sprintQualiScoredAt:  { type: Date },
+  sprintQualiResults:   [SprintQualiResultEntrySchema],
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
@@ -498,6 +523,29 @@ WaiverBidSchema.index({ leagueId: 1, status: 1 });
 WaiverBidSchema.index({ leagueId: 1, userId: 1, assetId: 1 }, { unique: true });
 
 // ---------------------------------------------------------------------------
+// ScoringLog — audit trail for every scoring event
+// ---------------------------------------------------------------------------
+
+const ScoringLogTeamUpdateSchema = new Schema({
+  rosterId:    { type: Schema.Types.ObjectId, ref: 'Roster' },
+  leagueId:    { type: Schema.Types.ObjectId, ref: 'League' },
+  pointsAdded: { type: Number },
+}, { _id: false });
+
+const ScoringLogSchema = new Schema({
+  event:       { type: String, enum: ['sprint_quali_scored', 'sprint_race_scored', 'race_scored', 'rescore', 'error'], required: true },
+  season:      { type: Number, required: true },
+  round:       { type: Number, required: true },
+  processedAt: { type: Date, default: Date.now },
+  sprintQualiResults: { type: Schema.Types.Mixed },
+  teamUpdates:        [ScoringLogTeamUpdateSchema],
+  errorMessage:       { type: String },
+  dryRun:             { type: Boolean, default: false },
+});
+
+ScoringLogSchema.index({ season: 1, round: 1, event: 1 });
+
+// ---------------------------------------------------------------------------
 // ProcessedRace — idempotency log for admin/process-race
 // ---------------------------------------------------------------------------
 
@@ -527,6 +575,7 @@ export const HistoricalSeason         = mongoose.models.HistoricalSeason        
 export const HistoricalRaceBreakdown  = mongoose.models.HistoricalRaceBreakdown  || mongoose.model('HistoricalRaceBreakdown',  HistoricalRaceBreakdownSchema);
 export const ChatMessage              = mongoose.models.ChatMessage              || mongoose.model('ChatMessage',              ChatMessageSchema);
 export const AssetNews                = mongoose.models.AssetNews                || mongoose.model('AssetNews',                AssetNewsSchema);
+export const ScoringLog               = mongoose.models.ScoringLog               || mongoose.model('ScoringLog',               ScoringLogSchema);
 export const PushToken                = mongoose.models.PushToken                || mongoose.model('PushToken',                PushTokenSchema);
 export const Notification             = mongoose.models.Notification             || mongoose.model('Notification',             NotificationSchema);
 export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);
