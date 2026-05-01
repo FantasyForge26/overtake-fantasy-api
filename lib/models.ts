@@ -318,6 +318,12 @@ const RaceCalendarSchema = new Schema({
   meetingKey:           { type: Number, default: null, index: true },
   processed:            { type: Boolean, default: false, index: true },
   boostLockProcessed:   { type: Boolean, default: false },
+  fp1Date:              { type: Date },
+  fp2Date:              { type: Date },
+  fp3Date:              { type: Date },
+  sprintQualifyingDate: { type: Date },
+  cancelled2026:        { type: Boolean, default: false },
+  sessionsBackfilledAt: { type: Date },
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
