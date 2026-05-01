@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -73,6 +73,14 @@ export async function POST(req: NextRequest) {
 
   if (!updatedSession) {
     return NextResponse.json({ error: 'Asset already taken — please pick again' }, { status: 409 });
+  }
+
+  try {
+    await assertAssetNotOnAnyRoster(leagueId, asset._id);
+  } catch (err) {
+    console.error('[draft/pick] assertAssetNotOnAnyRoster failed:', err);
+    await rollbackClaim(updatedSession._id, asset._id);
+    return NextResponse.json({ error: 'Asset already on a roster — please pick again' }, { status: 409 });
   }
 
   await assignRosterSlot(leagueId, userId, asset._id, assetType);

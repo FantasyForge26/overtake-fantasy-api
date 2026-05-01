@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
 
 function neededAssetTypes(roster: any): string[] {
   const needed: string[] = [];
@@ -137,6 +137,14 @@ export async function GET(req: NextRequest) {
     });
 
     if (!updatedSession) continue; // lost the race — next cron run will handle it
+
+    try {
+      await assertAssetNotOnAnyRoster(leagueId, bestAsset._id);
+    } catch (err) {
+      console.error('[cron/auto-pick] assertAssetNotOnAnyRoster failed:', err);
+      await rollbackClaim(updatedSession._id, bestAsset._id);
+      continue; // next cron run will pick a different asset
+    }
 
     await assignRosterSlot(leagueId, userId, bestAsset._id, assetType);
 

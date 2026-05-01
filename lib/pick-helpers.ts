@@ -53,6 +53,54 @@ export async function atomicClaimAsset(params: {
   );
 }
 
+const ROSTER_ASSET_FIELDS = [
+  'driver1AssetId', 'driver2AssetId',
+  'principalAssetId',
+  'pitCrew1AssetId', 'pitCrew2AssetId',
+  'powerUnitAssetId',
+] as const;
+
+/**
+ * Defense-in-depth guard: throws if the asset is already assigned to any roster
+ * in this league. Call this AFTER atomicClaimAsset succeeds but BEFORE writing to
+ * the roster. Catches bugs that bypass the draft session (manual /add calls, out-of-
+ * sync availableAssetIds, or future code paths that forget atomicClaimAsset).
+ *
+ * If this throws, the caller must roll back by adding the asset back to
+ * availableAssetIds.
+ */
+export async function assertAssetNotOnAnyRoster(
+  leagueId: string | mongoose.Types.ObjectId,
+  assetId: mongoose.Types.ObjectId | string,
+): Promise<void> {
+  const assetIdStr = assetId.toString();
+  const allRosters = await Roster.find({ leagueId }).lean() as any[];
+
+  for (const roster of allRosters) {
+    for (const field of ROSTER_ASSET_FIELDS) {
+      if (roster[field]?.toString() === assetIdStr) {
+        throw new Error(
+          `DUPLICATE_ASSET: ${assetIdStr} already assigned to roster ${roster._id} (${field})`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Rolls back a successful atomic claim by re-adding the asset to availableAssetIds.
+ * Call this if assertAssetNotOnAnyRoster throws after a successful atomicClaimAsset.
+ */
+export async function rollbackClaim(
+  sessionId: mongoose.Types.ObjectId | string,
+  assetId: mongoose.Types.ObjectId | string,
+): Promise<void> {
+  await DraftSession.updateOne(
+    { _id: sessionId },
+    { $addToSet: { availableAssetIds: assetId } },
+  );
+}
+
 /**
  * Assigns the picked asset to the correct roster slot.
  * For driver and pitCrew (two slots each), reads the roster to determine which slot is open.

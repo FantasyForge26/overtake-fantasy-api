@@ -4,7 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-import { atomicClaimAsset, assignRosterSlot } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
 
 // Returns the assetType the drafter needs to fill next, in priority order
 function neededAssetType(roster: any, currentRound: number, totalRounds: number): string {
@@ -123,6 +123,14 @@ export async function POST(req: NextRequest) {
 
   if (!updatedSession) {
     return NextResponse.json({ error: 'Pick slot already taken — please retry' }, { status: 409 });
+  }
+
+  try {
+    await assertAssetNotOnAnyRoster(leagueId, bestAsset._id);
+  } catch (err) {
+    console.error('[draft/auto-pick] assertAssetNotOnAnyRoster failed:', err);
+    await rollbackClaim(updatedSession._id, bestAsset._id);
+    return NextResponse.json({ error: 'Asset already on a roster — please retry' }, { status: 409 });
   }
 
   await assignRosterSlot(leagueId, userId, bestAsset._id, assetType);
