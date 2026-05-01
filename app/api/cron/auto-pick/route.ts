@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   let processed = 0;
 
   for (const draftSession of activeSessions) {
-    const userId = draftSession.draftOrder[draftSession.currentPickIndex]?.toString();
+    let userId = draftSession.draftOrder[draftSession.currentPickIndex]?.toString();
     if (!userId) continue;
 
     const isAutoDraft = draftSession.autoDraftUserIds?.includes(userId) ?? false;
@@ -41,11 +41,39 @@ export async function GET(req: NextRequest) {
     }
 
     const leagueId = draftSession.leagueId.toString();
-    const roster = await Roster.findOne({ leagueId, userId });
+    let roster = await Roster.findOne({ leagueId, userId });
     if (!roster) continue;
 
-    const neededTypes = neededAssetTypes(roster);
-    if (neededTypes.length === 0) continue;
+    let neededTypes = neededAssetTypes(roster);
+
+    while (neededTypes.length === 0 && draftSession.currentPickIndex < draftSession.draftOrder.length - 1) {
+      draftSession.currentPickIndex += 1;
+      const nextDrafterId = draftSession.draftOrder[draftSession.currentPickIndex];
+      const nextRoster = await Roster.findOne({
+        leagueId: draftSession.leagueId,
+        userId: nextDrafterId,
+      });
+      if (!nextRoster) break;
+      userId = nextDrafterId.toString();
+      roster = nextRoster;
+      neededTypes = neededAssetTypes(roster);
+    }
+
+    if (neededTypes.length === 0) {
+      // All rosters full — mark draft completed
+      draftSession.status = 'completed';
+      draftSession.completedAt = new Date();
+      draftSession.currentPickIndex = draftSession.draftOrder.length;
+      await draftSession.save();
+      await League.updateOne(
+        { _id: draftSession.leagueId },
+        { $set: { status: 'active' } },
+      );
+      processed++;
+      continue;
+    }
+
+    draftSession.currentPickStartedAt = new Date();
 
     const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
 
