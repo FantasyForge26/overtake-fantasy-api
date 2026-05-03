@@ -247,20 +247,25 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
 
   // 9. Persist per-asset weekend breakdown to RaceCalendar (additive — does not change scoring math)
   if (raceCalendar) {
-    // Build slug lookup maps from already-loaded allAssets
-    const driverSlugByCarNum = new Map<number, string>();
+    // Build slug/points lookup maps from already-loaded allAssets
+    const driverSlugByCarNum  = new Map<number, string>();
     const principalSlugByTeam = new Map<string, string>();
     const pitCrewSlugByCarNum = new Map<number, string>();
-    const puSlugByManufacturer = new Map<string, string>();
 
     for (const a of allAssets) {
-      if (a.assetType === 'driver' && a.carNumber)       driverSlugByCarNum.set(a.carNumber, a.slug);
-      if (a.assetType === 'principal' && a.team)         principalSlugByTeam.set(a.team, a.slug);
+      if (a.assetType === 'driver' && a.carNumber)   driverSlugByCarNum.set(a.carNumber, a.slug);
+      if (a.assetType === 'principal' && a.team)     principalSlugByTeam.set(a.team, a.slug);
       if (a.assetType === 'pitCrew') {
         const cn = a.carNumber ?? pitCrewCarNumber(a.slug ?? '');
         if (cn) pitCrewSlugByCarNum.set(cn, a.slug);
       }
-      if (a.assetType === 'powerUnit' && a.manufacturer) puSlugByManufacturer.set(a.manufacturer, a.slug);
+    }
+
+    // Power units: manufacturer → points (multiple assets can share a manufacturer,
+    // so we invert: iterate assets and look up points rather than collapsing to one slug)
+    const puPointsByManufacturer = new Map<string, number>();
+    for (const p of scores.powerUnits) {
+      puPointsByManufacturer.set(p.manufacturer, Math.round(p.points * 100) / 100);
     }
 
     // Race results: race-day points only (not qualifying or sprint — those have their own arrays)
@@ -292,11 +297,12 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
         points:      Math.round(p.total * 100) / 100,
       }));
 
-    const powerUnitResultsForCal = scores.powerUnits
-      .filter(p => puSlugByManufacturer.has(p.manufacturer))
-      .map(p => ({
-        powerUnitSlug: puSlugByManufacturer.get(p.manufacturer)!,
-        points:        Math.round(p.points * 100) / 100,
+    // One entry per PU asset — assets sharing a manufacturer all get the same manufacturer score
+    const powerUnitResultsForCal = allAssets
+      .filter(a => a.assetType === 'powerUnit' && a.manufacturer && puPointsByManufacturer.has(a.manufacturer))
+      .map(a => ({
+        powerUnitSlug: a.slug as string,
+        points:        puPointsByManufacturer.get(a.manufacturer)!,
       }));
 
     await RaceCalendar.findOneAndUpdate(
