@@ -40,6 +40,7 @@ const AssetSchema = new Schema({
   q3Count:            { type: Number, default: 0 },
   age:                { type: Number },
   teamStrength:       { type: Number, default: 50 },
+  boostsRemaining:    { type: Number, default: 12 },
 });
 
 AssetSchema.index({ assetType: 1, season: 1 });
@@ -578,7 +579,7 @@ const ScoringLogTeamUpdateSchema = new Schema({
 }, { _id: false });
 
 const ScoringLogSchema = new Schema({
-  event:       { type: String, enum: ['sprint_quali_scored', 'sprint_race_scored', 'qualifying_scored', 'race_scored', 'rescore', 'error'], required: true },
+  event:       { type: String, enum: ['sprint_quali_scored', 'sprint_race_scored', 'qualifying_scored', 'race_scored', 'boost_applied', 'boost_initialized', 'rescore', 'error'], required: true },
   season:      { type: Number, required: true },
   round:       { type: Number, required: true },
   processedAt: { type: Date, default: Date.now },
