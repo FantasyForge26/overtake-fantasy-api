@@ -361,6 +361,16 @@ const RaceCalendarSchema = new Schema({
   sprintRaceScored:     { type: Boolean, default: false },
   sprintRaceScoredAt:   { type: Date },
   sprintRaceResults:    [SprintRaceResultEntrySchema],
+  // Main qualifying scoring flag
+  qualifyingScored:     { type: Boolean, default: false },
+  qualifyingScoredAt:   { type: Date },
+  qualifyingResults:    [{
+    driverSlug: String,
+    position:   Number,
+    stage:      String,   // 'Q1' | 'Q2' | 'Q3'
+    points:     Number,
+    fastestLap: { type: Boolean, default: false },
+  }],
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
@@ -545,7 +555,7 @@ const ScoringLogTeamUpdateSchema = new Schema({
 }, { _id: false });
 
 const ScoringLogSchema = new Schema({
-  event:       { type: String, enum: ['sprint_quali_scored', 'sprint_race_scored', 'race_scored', 'rescore', 'error'], required: true },
+  event:       { type: String, enum: ['sprint_quali_scored', 'sprint_race_scored', 'qualifying_scored', 'race_scored', 'rescore', 'error'], required: true },
   season:      { type: Number, required: true },
   round:       { type: Number, required: true },
   processedAt: { type: Date, default: Date.now },

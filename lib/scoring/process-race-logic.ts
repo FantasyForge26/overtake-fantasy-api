@@ -4,7 +4,7 @@
  *   - app/api/cron/auto-process-race (automated, GET triggered by schedule)
  */
 
-import { Asset, League, Roster, HistoricalSeason, ProcessedRace } from '@/lib/models';
+import { Asset, League, Roster, HistoricalSeason, ProcessedRace, RaceCalendar } from '@/lib/models';
 import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
@@ -49,6 +49,9 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
   // Patch race name into the ProcessedRace lock if it exists
   await ProcessedRace.updateOne({ meetingKey }, { raceName: weekendData.raceName });
 
+  // Load calendar flags so we can skip sessions already scored by live crons
+  const raceCalendar = await RaceCalendar.findOne({ meetingKey }).lean() as any;
+
   // 2. Load principal streak states
   const principalAssets = await Asset.find({ season: 2026, assetType: 'principal', isActive: true }).lean() as any[];
   const streakStates: Record<string, PrincipalStreakState> = {};
@@ -64,14 +67,21 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
 
   // 4. Build lookup maps
   const driverScoreByNum = new Map<number, number>();
-  for (const q of scores.qualifying) {
-    driverScoreByNum.set(q.driverNumber, (driverScoreByNum.get(q.driverNumber) ?? 0) + q.total);
+
+  // Skip qualifying if already scored live by score-main-quali cron (prevents double-scoring)
+  if (raceCalendar?.qualifyingScored !== true) {
+    for (const q of scores.qualifying) {
+      driverScoreByNum.set(q.driverNumber, (driverScoreByNum.get(q.driverNumber) ?? 0) + q.total);
+    }
   }
-  if (scores.sprint) {
+
+  // Skip sprint race if already scored live by score-sprint-race cron (prevents double-scoring)
+  if (scores.sprint && raceCalendar?.sprintRaceScored !== true) {
     for (const s of scores.sprint) {
       driverScoreByNum.set(s.driverNumber, (driverScoreByNum.get(s.driverNumber) ?? 0) + s.total);
     }
   }
+
   for (const r of scores.race) {
     driverScoreByNum.set(r.driverNumber, (driverScoreByNum.get(r.driverNumber) ?? 0) + r.total);
   }
