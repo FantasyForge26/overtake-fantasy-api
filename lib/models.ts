@@ -371,6 +371,29 @@ const RaceCalendarSchema = new Schema({
     points:     Number,
     fastestLap: { type: Boolean, default: false },
   }],
+  // Main race + non-driver results (written by processRace after race weekend)
+  processedAt:       { type: Date },
+  raceResults: [{
+    driverSlug:    String,
+    position:      Number,
+    startPosition: Number,
+    points:        Number,
+    fastestLap:    { type: Boolean, default: false },
+    notClassified: { type: Boolean, default: false },
+    dsq:           { type: Boolean, default: false },
+  }],
+  principalResults: [{
+    principalSlug: String,
+    points:        Number,
+  }],
+  pitCrewResults: [{
+    pitCrewSlug: String,
+    points:      Number,
+  }],
+  powerUnitResults: [{
+    powerUnitSlug: String,
+    points:        Number,
+  }],
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });

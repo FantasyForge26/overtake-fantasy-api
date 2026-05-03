@@ -245,6 +245,74 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     );
   }
 
+  // 9. Persist per-asset weekend breakdown to RaceCalendar (additive — does not change scoring math)
+  if (raceCalendar) {
+    // Build slug lookup maps from already-loaded allAssets
+    const driverSlugByCarNum = new Map<number, string>();
+    const principalSlugByTeam = new Map<string, string>();
+    const pitCrewSlugByCarNum = new Map<number, string>();
+    const puSlugByManufacturer = new Map<string, string>();
+
+    for (const a of allAssets) {
+      if (a.assetType === 'driver' && a.carNumber)       driverSlugByCarNum.set(a.carNumber, a.slug);
+      if (a.assetType === 'principal' && a.team)         principalSlugByTeam.set(a.team, a.slug);
+      if (a.assetType === 'pitCrew') {
+        const cn = a.carNumber ?? pitCrewCarNumber(a.slug ?? '');
+        if (cn) pitCrewSlugByCarNum.set(cn, a.slug);
+      }
+      if (a.assetType === 'powerUnit' && a.manufacturer) puSlugByManufacturer.set(a.manufacturer, a.slug);
+    }
+
+    // Race results: race-day points only (not qualifying or sprint — those have their own arrays)
+    const raceScoreByNum = new Map<number, number>(scores.race.map(r => [r.driverNumber, r.total]));
+    const raceResultsForCal = weekendData.raceResults
+      .filter(r => driverSlugByCarNum.has(r.driverNumber))
+      .map(r => ({
+        driverSlug:    driverSlugByCarNum.get(r.driverNumber)!,
+        position:      r.finishPosition ?? null,
+        startPosition: r.startPosition,
+        points:        Math.round((raceScoreByNum.get(r.driverNumber) ?? 0) * 100) / 100,
+        fastestLap:    r.fastestLap,
+        notClassified: r.status === 'DNF',
+        dsq:           r.status === 'DSQ',
+      }))
+      .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+
+    const principalResultsForCal = scores.principals
+      .filter(p => principalSlugByTeam.has(p.teamName))
+      .map(p => ({
+        principalSlug: principalSlugByTeam.get(p.teamName)!,
+        points:        Math.round(p.total * 100) / 100,
+      }));
+
+    const pitCrewResultsForCal = scores.pitCrews
+      .filter(p => pitCrewSlugByCarNum.has(p.carNumber))
+      .map(p => ({
+        pitCrewSlug: pitCrewSlugByCarNum.get(p.carNumber)!,
+        points:      Math.round(p.total * 100) / 100,
+      }));
+
+    const powerUnitResultsForCal = scores.powerUnits
+      .filter(p => puSlugByManufacturer.has(p.manufacturer))
+      .map(p => ({
+        powerUnitSlug: puSlugByManufacturer.get(p.manufacturer)!,
+        points:        Math.round(p.points * 100) / 100,
+      }));
+
+    await RaceCalendar.findOneAndUpdate(
+      { _id: (raceCalendar as any)._id },
+      { $set: {
+          processed:        true,
+          processedAt:      new Date(),
+          raceResults:      raceResultsForCal,
+          principalResults: principalResultsForCal,
+          pitCrewResults:   pitCrewResultsForCal,
+          powerUnitResults: powerUnitResultsForCal,
+        },
+      },
+    );
+  }
+
   return {
     success:        true,
     raceName:       scores.raceName,
