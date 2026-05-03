@@ -30,11 +30,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const { id: leagueId } = await params;
-  const userId = (session.user as any).id as string;
+  const requestingUserId = (session.user as any).id as string;
+
+  // Optional ?userId=X to view another manager's roster (auth still required)
+  const targetUserId = req.nextUrl.searchParams.get('userId') ?? requestingUserId;
 
   await connectDB();
 
-  if (!(await verifyLeagueMembership(leagueId, userId))) {
+  if (!(await verifyLeagueMembership(leagueId, requestingUserId))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -69,8 +72,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
   }
 
-  // Load the user's roster (populated with asset slugs)
-  const roster = await Roster.findOne({ leagueId, userId, season: 2026 })
+  // Load the target user's roster (populated with asset slugs)
+  const roster = await Roster.findOne({ leagueId, userId: targetUserId, season: 2026 })
     .populate('driver1AssetId',   'slug name team assetType')
     .populate('driver2AssetId',   'slug name team assetType')
     .populate('principalAssetId', 'slug name team assetType')
