@@ -86,10 +86,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
   }
 
-  // Build slug → points maps from calendar's stored sprint results
-  const sqPointsBySlug  = new Map<string, number>();
+  // Build slug → points/position maps from all stored session results
+  const sqPointsBySlug   = new Map<string, number>();
   const sqPositionBySlug = new Map<string, number>();
-  if (calendar.sprintQualiScored && Array.isArray(calendar.sprintQualiResults)) {
+  if (Array.isArray(calendar.sprintQualiResults)) {
     for (const r of calendar.sprintQualiResults) {
       if (r.driverSlug) {
         sqPointsBySlug.set(r.driverSlug, r.points ?? 0);
@@ -100,12 +100,56 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const srPointsBySlug   = new Map<string, number>();
   const srPositionBySlug = new Map<string, number>();
-  if (calendar.sprintRaceScored && Array.isArray(calendar.sprintRaceResults)) {
+  if (Array.isArray(calendar.sprintRaceResults)) {
     for (const r of calendar.sprintRaceResults) {
       if (r.driverSlug) {
         srPointsBySlug.set(r.driverSlug, r.points ?? 0);
         srPositionBySlug.set(r.driverSlug, r.position ?? 0);
       }
+    }
+  }
+
+  const qualPointsBySlug   = new Map<string, number>();
+  const qualPositionBySlug = new Map<string, number>();
+  if (Array.isArray(calendar.qualifyingResults)) {
+    for (const r of calendar.qualifyingResults) {
+      if (r.driverSlug) {
+        qualPointsBySlug.set(r.driverSlug, r.points ?? 0);
+        qualPositionBySlug.set(r.driverSlug, r.position ?? 0);
+      }
+    }
+  }
+
+  const racePointsBySlug   = new Map<string, number>();
+  const racePositionBySlug = new Map<string, number>();
+  if (Array.isArray(calendar.raceResults)) {
+    for (const r of calendar.raceResults) {
+      if (r.driverSlug) {
+        racePointsBySlug.set(r.driverSlug, r.points ?? 0);
+        racePositionBySlug.set(r.driverSlug, r.position ?? 0);
+      }
+    }
+  }
+
+  // Non-driver result maps (keyed by asset slug)
+  const principalPointsBySlug = new Map<string, number>();
+  if (Array.isArray(calendar.principalResults)) {
+    for (const r of calendar.principalResults) {
+      if (r.principalSlug) principalPointsBySlug.set(r.principalSlug, r.points ?? 0);
+    }
+  }
+
+  const pitCrewPointsBySlug = new Map<string, number>();
+  if (Array.isArray(calendar.pitCrewResults)) {
+    for (const r of calendar.pitCrewResults) {
+      if (r.pitCrewSlug) pitCrewPointsBySlug.set(r.pitCrewSlug, r.points ?? 0);
+    }
+  }
+
+  const powerUnitPointsBySlug = new Map<string, number>();
+  if (Array.isArray(calendar.powerUnitResults)) {
+    for (const r of calendar.powerUnitResults) {
+      if (r.powerUnitSlug) powerUnitPointsBySlug.set(r.powerUnitSlug, r.points ?? 0);
     }
   }
 
@@ -121,38 +165,43 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }[] = [];
 
     if (calendar.isSprint) {
+      const sqFound = slug ? sqPointsBySlug.has(slug) : false;
       sessions.push({
         key:           'sprintQuali',
         name:          'Sprint Qualifying',
-        scored:        !!calendar.sprintQualiScored,
-        points:        slug && calendar.sprintQualiScored ? (sqPointsBySlug.get(slug) ?? 0) : null,
-        position:      slug && calendar.sprintQualiScored ? (sqPositionBySlug.get(slug) ?? null) : null,
+        scored:        sqFound,
+        points:        sqFound && slug ? (sqPointsBySlug.get(slug) ?? 0) : null,
+        position:      sqFound && slug ? (sqPositionBySlug.get(slug) ?? null) : null,
         scheduledDate: calendar.sprintQualifyingDate ?? null,
       });
+      const srFound = slug ? srPointsBySlug.has(slug) : false;
       sessions.push({
         key:           'sprintRace',
         name:          'Sprint Race',
-        scored:        !!calendar.sprintRaceScored,
-        points:        slug && calendar.sprintRaceScored ? (srPointsBySlug.get(slug) ?? 0) : null,
-        position:      slug && calendar.sprintRaceScored ? (srPositionBySlug.get(slug) ?? null) : null,
+        scored:        srFound,
+        points:        srFound && slug ? (srPointsBySlug.get(slug) ?? 0) : null,
+        position:      srFound && slug ? (srPositionBySlug.get(slug) ?? null) : null,
         scheduledDate: calendar.sprintDate ?? null,
       });
     }
 
+    const qualFound = slug ? qualPointsBySlug.has(slug) : false;
     sessions.push({
       key:           'qualifying',
       name:          'Qualifying',
-      scored:        !!calendar.processed,
-      points:        null, // tracked in bulk via process-race-logic — future phase
-      position:      null,
+      scored:        qualFound,
+      points:        qualFound && slug ? (qualPointsBySlug.get(slug) ?? 0) : null,
+      position:      qualFound && slug ? (qualPositionBySlug.get(slug) ?? null) : null,
       scheduledDate: calendar.qualifyingDate ?? null,
     });
+
+    const raceFound = slug ? racePointsBySlug.has(slug) : false;
     sessions.push({
       key:           'race',
       name:          'Race',
-      scored:        !!calendar.processed,
-      points:        null, // tracked in bulk via process-race-logic — future phase
-      position:      null,
+      scored:        raceFound,
+      points:        raceFound && slug ? (racePointsBySlug.get(slug) ?? 0) : null,
+      position:      raceFound && slug ? (racePositionBySlug.get(slug) ?? null) : null,
       scheduledDate: calendar.raceDate ?? null,
     });
 
@@ -173,19 +222,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     };
   }
 
-  function buildNonDriverScore(asset: any, slotLabel: string) {
+  function buildNonDriverScore(
+    asset: any,
+    pointsMap: Map<string, number>,
+  ) {
     if (!asset) return null;
+    const slug    = asset.slug as string;
+    const found   = pointsMap.has(slug);
+    const points  = found ? (pointsMap.get(slug) ?? 0) : null;
     return {
-      slug:            asset.slug,
-      name:            asset.name,
-      team:            asset.team,
-      weekendPoints:   0,
-      hasWeekendData:  false,
-      note:            `${slotLabel} scores are added at end of race weekend`,
+      slug,
+      name:           asset.name,
+      team:           asset.team,
+      weekendPoints:  Math.round((points ?? 0) * 100) / 100,
+      hasWeekendData: found,
+      sessions: [{
+        key:           'race',
+        name:          'Race',
+        scored:        found,
+        points,
+        scheduledDate: calendar.raceDate ?? null,
+      }],
     };
   }
 
-  // Which sessions have been completed so far
+  // Which sessions have been completed so far (scored = has result data in the array)
   const sessionsCompleted: string[] = [];
   const sessionsRemaining: string[] = [];
   const allSessions = calendar.isSprint
@@ -193,10 +254,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     : ['qualifying', 'race'];
 
   const scoredMap: Record<string, boolean> = {
-    sprintQuali: !!calendar.sprintQualiScored,
-    sprintRace:  !!calendar.sprintRaceScored,
-    qualifying:  !!calendar.processed,
-    race:        !!calendar.processed,
+    sprintQuali: sqPointsBySlug.size > 0,
+    sprintRace:  srPointsBySlug.size > 0,
+    qualifying:  qualPointsBySlug.size > 0,
+    race:        racePointsBySlug.size > 0,
   };
 
   for (const key of allSessions) {
@@ -206,10 +267,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const rosterScores = {
     driver1:   buildDriverScore(roster.driver1AssetId),
     driver2:   buildDriverScore(roster.driver2AssetId),
-    principal: buildNonDriverScore(roster.principalAssetId, 'Principal'),
-    pitCrew1:  buildNonDriverScore(roster.pitCrew1AssetId,  'Pit crew'),
-    pitCrew2:  buildNonDriverScore(roster.pitCrew2AssetId,  'Pit crew'),
-    powerUnit: buildNonDriverScore(roster.powerUnitAssetId, 'Power unit'),
+    principal: buildNonDriverScore(roster.principalAssetId, principalPointsBySlug),
+    pitCrew1:  buildNonDriverScore(roster.pitCrew1AssetId,  pitCrewPointsBySlug),
+    pitCrew2:  buildNonDriverScore(roster.pitCrew2AssetId,  pitCrewPointsBySlug),
+    powerUnit: buildNonDriverScore(roster.powerUnitAssetId, powerUnitPointsBySlug),
   };
 
   return NextResponse.json({
