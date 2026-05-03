@@ -276,6 +276,14 @@ const SprintQualiResultEntrySchema = new Schema({
   points:     { type: Number },
 }, { _id: false });
 
+const SprintRaceResultEntrySchema = new Schema({
+  driverSlug:    { type: String },
+  position:      { type: Number },
+  startPosition: { type: Number },
+  points:        { type: Number },
+  fastestLap:    { type: Boolean, default: false },
+}, { _id: false });
+
 const RaceResultSchema = new Schema({
   leagueId:      { type: Schema.Types.ObjectId, ref: 'League', required: true },
   season:        { type: Number, default: 2026 },
@@ -349,6 +357,10 @@ const RaceCalendarSchema = new Schema({
   sprintQualiScored:    { type: Boolean, default: false },
   sprintQualiScoredAt:  { type: Date },
   sprintQualiResults:   [SprintQualiResultEntrySchema],
+  // Sprint race scoring flag
+  sprintRaceScored:     { type: Boolean, default: false },
+  sprintRaceScoredAt:   { type: Date },
+  sprintRaceResults:    [SprintRaceResultEntrySchema],
 });
 
 RaceCalendarSchema.index({ season: 1, round: 1 }, { unique: true });
