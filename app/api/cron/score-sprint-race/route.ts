@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, League, Roster, RaceCalendar, ScoringLog } from '@/lib/models';
 import { calculateDriverSprintScore } from '@/lib/otf-calculator';
+import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
 
 const OPENF1_BASE     = 'https://api.openf1.org/v1';
 const MIN_BUFFER_MS   = 30 * 60 * 1000;       // 30 min after session end before scoring
@@ -252,7 +253,7 @@ export async function GET(req: NextRequest) {
 
   // ── 13. Score all active league rosters ───────────────────────────────────
   const leagues = await League.find({ status: 'active' }).lean() as any[];
-  const teamUpdateLog: { rosterId: string; leagueId: string; pointsAdded: number }[] = [];
+  const teamUpdateLog: { rosterId: string; leagueId: string; pointsAdded: number; boostedSlugs: string[] }[] = [];
   let teamsUpdated = 0;
 
   for (const league of leagues) {
@@ -260,15 +261,26 @@ export async function GET(req: NextRequest) {
     const rosters  = await Roster.find({ leagueId, season: 2026 });
     if (!rosters.length) continue;
 
+    // Load locked boost selections for this league + round
+    const boosts = await loadBoostedSlots(leagueId, calendar.round, 2026);
+
     for (const roster of rosters) {
+      const rosterId = roster._id.toString();
       const d1 = roster.driver1AssetId ? assetByIdStr.get(roster.driver1AssetId.toString()) : null;
       const d2 = roster.driver2AssetId ? assetByIdStr.get(roster.driver2AssetId.toString()) : null;
 
-      const d1Pts = d1 ? (pointsBySlug.get(d1.slug) ?? 0) : 0;
-      const d2Pts = d2 ? (pointsBySlug.get(d2.slug) ?? 0) : 0;
+      const d1Mult = d1 && isBoosted(boosts, rosterId, d1.slug) ? 2 : 1;
+      const d2Mult = d2 && isBoosted(boosts, rosterId, d2.slug) ? 2 : 1;
+      const d1Pts = d1 ? (pointsBySlug.get(d1.slug) ?? 0) * d1Mult : 0;
+      const d2Pts = d2 ? (pointsBySlug.get(d2.slug) ?? 0) * d2Mult : 0;
       const totalAdded = Math.round((d1Pts + d2Pts) * 100) / 100;
 
-      teamUpdateLog.push({ rosterId: roster._id.toString(), leagueId, pointsAdded: totalAdded });
+      const boostedSlugs = [
+        ...(d1Mult === 2 && d1 ? [d1.slug] : []),
+        ...(d2Mult === 2 && d2 ? [d2.slug] : []),
+      ];
+
+      teamUpdateLog.push({ rosterId, leagueId, pointsAdded: totalAdded, boostedSlugs });
       if (totalAdded !== 0) teamsUpdated++;
 
       if (!dryRun) {
@@ -318,6 +330,7 @@ export async function GET(req: NextRequest) {
       rosterId:    u.rosterId,
       leagueId:    u.leagueId,
       pointsAdded: u.pointsAdded,
+      boostedSlugs: u.boostedSlugs,
     })),
     dryRun,
   });
