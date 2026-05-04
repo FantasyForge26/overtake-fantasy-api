@@ -8,6 +8,7 @@ import { Asset, League, Roster, HistoricalSeason, ProcessedRace, RaceCalendar } 
 import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
+import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
 
 export const POWER_UNIT_MAP: Record<string, string> = {
   'Red Bull Racing': 'Ford Red Bull Powertrains',
@@ -115,9 +116,14 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     const rosters  = await Roster.find({ leagueId, season: 2026 });
     if (!rosters.length) continue;
 
+    // Load locked boost selections for this league + round.
+    // raceCalendar may be null for old meetings without a calendar entry — use round 0 (yields empty boosts, safe no-op).
+    const boosts = await loadBoostedSlots(leagueId, raceCalendar?.round ?? 0, 2026);
+
     let rostersScored = 0;
 
     for (const roster of rosters) {
+      const rosterId = roster._id.toString();
       let racePoints = 0;
 
       const d1  = roster.driver1AssetId   ? assetById.get(roster.driver1AssetId.toString())   : null;
@@ -127,18 +133,29 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
       const pc2 = roster.pitCrew2AssetId  ? assetById.get(roster.pitCrew2AssetId.toString())  : null;
       const pu  = roster.powerUnitAssetId ? assetById.get(roster.powerUnitAssetId.toString()) : null;
 
-      if (d1?.carNumber)     racePoints += driverScoreByNum.get(d1.carNumber) ?? 0;
-      if (d2?.carNumber)     racePoints += driverScoreByNum.get(d2.carNumber) ?? 0;
-      if (pr?.team)          racePoints += principalScoreByTeam.get(pr.team) ?? 0;
+      // Drivers: boost multiplier applies (driver1Boost / driver2Boost)
+      const d1Mult = d1?.slug && isBoosted(boosts, rosterId, d1.slug) ? 2 : 1;
+      const d2Mult = d2?.slug && isBoosted(boosts, rosterId, d2.slug) ? 2 : 1;
+      if (d1?.carNumber) racePoints += (driverScoreByNum.get(d1.carNumber) ?? 0) * d1Mult;
+      if (d2?.carNumber) racePoints += (driverScoreByNum.get(d2.carNumber) ?? 0) * d2Mult;
+
+      // Principal: NOT boostable — no multiplier
+      if (pr?.team) racePoints += principalScoreByTeam.get(pr.team) ?? 0;
+
+      // Pit crews: boost multiplier applies (pitCrew1Boost / pitCrew2Boost)
       if (pc1) {
         const cn = pc1.carNumber ?? pitCrewCarNumber(pc1.slug ?? '');
-        racePoints += pitCrewScoreByNum.get(cn) ?? 0;
+        const mult = pc1.slug && isBoosted(boosts, rosterId, pc1.slug) ? 2 : 1;
+        racePoints += (pitCrewScoreByNum.get(cn) ?? 0) * mult;
       }
       if (pc2) {
         const cn = pc2.carNumber ?? pitCrewCarNumber(pc2.slug ?? '');
-        racePoints += pitCrewScoreByNum.get(cn) ?? 0;
+        const mult = pc2.slug && isBoosted(boosts, rosterId, pc2.slug) ? 2 : 1;
+        racePoints += (pitCrewScoreByNum.get(cn) ?? 0) * mult;
       }
-      if (pu?.manufacturer)  racePoints += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
+
+      // Power unit: NOT boostable — no multiplier
+      if (pu?.manufacturer) racePoints += puScoreByManufacturer.get(pu.manufacturer) ?? 0;
 
       racePoints        = Math.round(racePoints * 100) / 100;
       roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + racePoints) * 100) / 100;
