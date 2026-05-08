@@ -61,12 +61,16 @@ export async function findMeetingKeyForDate(
  * of qualifyingDate and sprintDate; for standard weekends it is qualifyingDate.
  */
 export function firstSessionLockTime(race: {
-  raceDate:      Date | string;
-  qualifyingDate: Date | string;
-  sprintDate?:   Date | string | null;
-  isSprint?:     boolean;
+  raceDate:              Date | string;
+  qualifyingDate:        Date | string;
+  sprintDate?:           Date | string | null;
+  sprintQualifyingDate?: Date | string | null;
+  isSprint?:             boolean;
 }): Date {
   const dates = [new Date(race.qualifyingDate)];
+  if (race.isSprint && race.sprintQualifyingDate) {
+    dates.push(new Date(race.sprintQualifyingDate));
+  }
   if (race.isSprint && race.sprintDate) {
     dates.push(new Date(race.sprintDate));
   }

@@ -19,10 +19,14 @@ export async function GET(req: NextRequest) {
   // Query candidates: unprocessed races whose qualifying session starts within the next hour.
   // We can't query by computed firstSessionLockTime directly, so we fetch a small window
   // and filter in memory.
+  const lookAhead = new Date(now.getTime() + 60 * 60 * 1000);
   const candidates = await RaceCalendar.find({
     cancelled:          false,
     boostLockProcessed: { $ne: true },
-    qualifyingDate:     { $gt: nowMinus, $lte: new Date(now.getTime() + 60 * 60 * 1000) },
+    $or: [
+      { qualifyingDate:        { $gt: nowMinus, $lte: lookAhead } },
+      { sprintQualifyingDate:  { $gt: nowMinus, $lte: lookAhead } },
+    ],
   }).sort({ round: 1 }).lean() as any[];
 
   // Find the first race whose firstSessionLockTime falls in (nowMinus, now]
