@@ -19,6 +19,7 @@ import { connectDB } from '@/lib/db';
 import { Roster, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
+import { loadBoostedSlots } from '@/lib/scoring/boost-helper';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const ONE_DAY_MS    = 24 * 60 * 60 * 1000;
@@ -85,6 +86,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!roster) {
     return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
   }
+
+  // Load boosted asset slugs for this roster (Phase 8F)
+  const boosts = await loadBoostedSlots(String(leagueId), calendar.round, 2026);
+  const rosterIdStr = String((roster as any)._id);
+  const boostedSlugs = boosts.byRoster.get(rosterIdStr) ?? new Set<string>();
 
   // Build slug → points/position maps from all stored session results
   const sqPointsBySlug   = new Map<string, number>();
@@ -155,6 +161,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // Build sessions list — sprint weekends have extra sessions
   function buildDriverSessions(slug: string | undefined) {
+    const isBoosted = !!slug && boostedSlugs.has(slug);
+    const mult = isBoosted ? 2 : 1;
     const sessions: {
       key: string;
       name: string;
@@ -162,49 +170,50 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       scored: boolean;
       position: number | null;
       scheduledDate: Date | null;
+      boosted: boolean;
     }[] = [];
-
     if (calendar.isSprint) {
       const sqFound = slug ? sqPointsBySlug.has(slug) : false;
       sessions.push({
         key:           'sprintQuali',
         name:          'Sprint Qualifying',
         scored:        sqFound,
-        points:        sqFound && slug ? (sqPointsBySlug.get(slug) ?? 0) : null,
+        points:        sqFound && slug ? (sqPointsBySlug.get(slug) ?? 0) * mult : null,
         position:      sqFound && slug ? (sqPositionBySlug.get(slug) ?? null) : null,
         scheduledDate: calendar.sprintQualifyingDate ?? null,
+        boosted:       isBoosted,
       });
       const srFound = slug ? srPointsBySlug.has(slug) : false;
       sessions.push({
         key:           'sprintRace',
         name:          'Sprint Race',
         scored:        srFound,
-        points:        srFound && slug ? (srPointsBySlug.get(slug) ?? 0) : null,
+        points:        srFound && slug ? (srPointsBySlug.get(slug) ?? 0) * mult : null,
         position:      srFound && slug ? (srPositionBySlug.get(slug) ?? null) : null,
         scheduledDate: calendar.sprintDate ?? null,
+        boosted:       isBoosted,
       });
     }
-
     const qualFound = slug ? qualPointsBySlug.has(slug) : false;
     sessions.push({
       key:           'qualifying',
       name:          'Qualifying',
       scored:        qualFound,
-      points:        qualFound && slug ? (qualPointsBySlug.get(slug) ?? 0) : null,
+      points:        qualFound && slug ? (qualPointsBySlug.get(slug) ?? 0) * mult : null,
       position:      qualFound && slug ? (qualPositionBySlug.get(slug) ?? null) : null,
       scheduledDate: calendar.qualifyingDate ?? null,
+      boosted:       isBoosted,
     });
-
     const raceFound = slug ? racePointsBySlug.has(slug) : false;
     sessions.push({
       key:           'race',
       name:          'Race',
       scored:        raceFound,
-      points:        raceFound && slug ? (racePointsBySlug.get(slug) ?? 0) : null,
+      points:        raceFound && slug ? (racePointsBySlug.get(slug) ?? 0) * mult : null,
       position:      raceFound && slug ? (racePositionBySlug.get(slug) ?? null) : null,
       scheduledDate: calendar.raceDate ?? null,
+      boosted:       isBoosted,
     });
-
     return sessions;
   }
 
@@ -227,9 +236,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     pointsMap: Map<string, number>,
   ) {
     if (!asset) return null;
-    const slug    = asset.slug as string;
-    const found   = pointsMap.has(slug);
-    const points  = found ? (pointsMap.get(slug) ?? 0) : null;
+    const slug      = asset.slug as string;
+    const isBoosted = boostedSlugs.has(slug);
+    const mult      = isBoosted ? 2 : 1;
+    const found     = pointsMap.has(slug);
+    const rawPoints = found ? (pointsMap.get(slug) ?? 0) : null;
+    const points    = rawPoints !== null ? rawPoints * mult : null;
     return {
       slug,
       name:           asset.name,
@@ -242,6 +254,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         scored:        found,
         points,
         scheduledDate: calendar.raceDate ?? null,
+        boosted:       isBoosted,
       }],
     };
   }
