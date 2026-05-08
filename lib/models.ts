@@ -372,6 +372,8 @@ const RaceCalendarSchema = new Schema({
     points:     Number,
     fastestLap: { type: Boolean, default: false },
   }],
+  // One-off backfill idempotency flag
+  miamiBoostBackfilled: { type: Boolean, default: false },
   // Main race + non-driver results (written by processRace after race weekend)
   processedAt:       { type: Date },
   raceResults: [{
