@@ -3,8 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
-import { Asset, RaceResult, RaceCalendar } from '@/lib/models';
-import { FINISH_POINTS } from '@/lib/otf-calculator';
+import { Asset, RaceCalendar } from '@/lib/models';
+import { calculateRaceDriverScore, type RaceDriverResult } from '@/lib/scoring/race';
+import { calculateQualifyingDriverScore, type QualifyingDriverResult } from '@/lib/scoring/qualifying';
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'Australia': '🇦🇺', 'China': '🇨🇳', 'Japan': '🇯🇵',
@@ -15,12 +16,6 @@ const COUNTRY_FLAGS: Record<string, string> = {
   'Azerbaijan': '🇦🇿', 'Singapore': '🇸🇬', 'Mexico': '🇲🇽',
   'Brazil': '🇧🇷', 'Qatar': '🇶🇦', 'Abu Dhabi': '🇦🇪',
 };
-
-function deriveQStage(pos: number): 'Q1' | 'Q2' | 'Q3' {
-  if (pos <= 10) return 'Q3';
-  if (pos <= 15) return 'Q2';
-  return 'Q1';
-}
 
 export async function GET(
   req: NextRequest,
@@ -40,89 +35,151 @@ export async function GET(
 
   await connectDB();
 
-  const asset = await Asset.findOne({ slug }).lean() as any;
+  const asset = await Asset.findOne({ slug, season }).lean() as any;
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
 
-  // For drivers: find their teammate for beat-teammate bonus
-  const teammate = asset.assetType === 'driver'
-    ? await Asset.findOne({ teamSlug: asset.teamSlug, assetType: 'driver', slug: { $ne: slug } }).lean() as any
-    : null;
+  const assetType: string = asset.assetType;
 
-  // Race calendar for flags/names
-  const calendar = await RaceCalendar.find({ season }).lean() as any[];
-  const calByRound: Record<number, any> = {};
-  for (const r of calendar) calByRound[r.round] = r;
+  // For drivers: load all 2026 driver assets to build slug → {driverNumber, teamName} map.
+  // This is needed to reconstruct the full RaceDriverResult[] for each round so that
+  // calculateRaceDriverScore can do the teammate comparison correctly.
+  const allDriverAssets = assetType === 'driver'
+    ? await Asset.find({ season, assetType: 'driver', isActive: true }).lean() as any[]
+    : [];
 
-  // Fetch one RaceResult per round across all leagues (data is identical across leagues)
-  const allResults = await RaceResult.find({ season }).sort({ round: 1 }).lean() as any[];
-
-  // Deduplicate by round — keep the first result found for each round
-  const byRound = new Map<number, any>();
-  for (const rr of allResults) {
-    if (!byRound.has(rr.round)) byRound.set(rr.round, rr);
+  const slugToDriver = new Map<string, { driverNumber: number; teamName: string }>();
+  for (const d of allDriverAssets) {
+    if (d.carNumber && d.team) {
+      slugToDriver.set(d.slug as string, { driverNumber: d.carNumber as number, teamName: d.team as string });
+    }
   }
+
+  const myDriverInfo = assetType === 'driver' ? (slugToDriver.get(slug) ?? null) : null;
+
+  // Fetch all calendar rounds for the season, ordered by round
+  const calendars = await RaceCalendar.find({ season }).sort({ round: 1 }).lean() as any[];
 
   const rows: any[] = [];
 
-  for (const [, rr] of [...byRound.entries()].sort(([a], [b]) => a - b)) {
-    const myResult = (rr.driverResults ?? []).find((d: any) => d.driverSlug === slug);
-    if (!myResult) continue;
+  for (const cal of calendars) {
+    const flag      = COUNTRY_FLAGS[cal.country as string] ?? '🏁';
+    const shortName = (cal.country as string) ?? `R${cal.round}`;
 
-    const cal = calByRound[rr.round];
-    const flag = cal ? (COUNTRY_FLAGS[cal.country] ?? '🏁') : '🏁';
-    const shortName = cal?.country ?? `R${rr.round}`;
+    if (assetType === 'driver') {
+      const raceArr:  any[] = cal.raceResults       ?? [];
+      const qualiArr: any[] = cal.qualifyingResults ?? [];
 
-    const teammateResult = teammate
-      ? (rr.driverResults ?? []).find((d: any) => d.driverSlug === teammate.slug)
-      : null;
+      const myRaceEntry  = raceArr.find((e: any)  => e.driverSlug === slug);
+      const myQualiEntry = qualiArr.find((e: any) => e.driverSlug === slug);
 
-    // Derive Q-stage from startPosition (proxy for qualifying position)
-    const qPos: number = myResult.qualifyingPosition ?? myResult.startPosition ?? 20;
-    const qStage = deriveQStage(qPos);
+      // Skip rounds with no data for this driver yet
+      if (!myRaceEntry && !myQualiEntry) continue;
 
-    // qPts only when qualifyingScored or exact qualifying position is stored
-    const qHasExactData = myResult.qualifyingPosition != null;
-    let qPts: number | null = null;
-    if (rr.qualifyingScored || qHasExactData) {
-      // Basic qualifying points from position (simplified — no teammate comparison available here)
-      qPts = null; // leave null; full calculation requires teammate data from OpenF1
-    }
+      // ── Qualifying ────────────────────────────────────────────────────────
+      let qPts:   number | null = null;
+      let qStage: string | null = null;
+      let qPos:   number | null = null;
 
-    if (myResult.notClassified || myResult.dnf) {
-      const rPts = myResult.notClassified ? -15 : 0;
+      if (myQualiEntry && myDriverInfo) {
+        qPos   = myQualiEntry.position ?? null;
+        qStage = myQualiEntry.stage
+          ?? ((qPos ?? 99) <= 10 ? 'Q3' : (qPos ?? 99) <= 15 ? 'Q2' : 'Q1');
+
+        // Reconstruct full QualifyingDriverResult[] so teammate comparison scores correctly
+        const qualResults: QualifyingDriverResult[] = qualiArr
+          .filter((e: any) => slugToDriver.has(e.driverSlug))
+          .map((e: any) => {
+            const info = slugToDriver.get(e.driverSlug)!;
+            const pos  = e.position ?? 99;
+            return {
+              driverNumber:  info.driverNumber,
+              teamName:      info.teamName,
+              finalPosition: e.position ?? null,
+              reachedQ2:     pos <= 15,
+              reachedQ3:     pos <= 10,
+              setLapTime:    true,
+              status:        'Qualified' as const,
+            };
+          });
+
+        const myQualResult = qualResults.find(r => r.driverNumber === myDriverInfo.driverNumber);
+        if (myQualResult) {
+          qPts = calculateQualifyingDriverScore(myQualResult, qualResults).total;
+        }
+      }
+
+      // ── Race ──────────────────────────────────────────────────────────────
+      let rPts = 0, flBonus = 0, btBonus = 0, pgScore = 0, racePts = 0;
+      let dnf  = false;
+
+      if (myRaceEntry && myDriverInfo) {
+        // Reconstruct full RaceDriverResult[] so teammate comparison scores correctly
+        const raceResults: RaceDriverResult[] = raceArr
+          .filter((e: any) => slugToDriver.has(e.driverSlug))
+          .map((e: any) => {
+            const info  = slugToDriver.get(e.driverSlug)!;
+            const isDnf = !!e.notClassified;
+            const isDsq = !!e.dsq;
+            return {
+              driverNumber:   info.driverNumber,
+              teamName:       info.teamName,
+              finishPosition: isDnf ? null : (e.position ?? null),
+              startPosition:  e.startPosition ?? e.position ?? 20,
+              status:         isDsq ? 'DSQ' : isDnf ? 'DNF' : 'Finished',
+              fastestLap:     !!e.fastestLap,
+            } as RaceDriverResult;
+          });
+
+        const myRaceResult = raceResults.find(r => r.driverNumber === myDriverInfo.driverNumber);
+        if (myRaceResult) {
+          const score = calculateRaceDriverScore(myRaceResult, raceResults);
+          rPts    = score.positionBonus + score.finishedBonus + score.dsqPenalty;
+          flBonus = score.fastestLapBonus;
+          btBonus = score.teammateBeatBonus;
+          pgScore = score.positionsGainedBonus + score.positionsLostPenalty + score.top10BonusPenalty;
+          racePts = score.total;
+          dnf     = myRaceResult.status !== 'Finished';
+        }
+      }
+
       rows.push({
-        round: rr.round, flag, shortName,
-        qPts, qStage, qPos,
-        rPts, flBonus: 0, btBonus: 0, pgScore: 0,
-        total: (qPts ?? 0) + rPts, dnf: true,
+        round: cal.round, flag, shortName,
+        qPts,
+        qStage,
+        qPos,
+        rPts:    Math.round(rPts    * 100) / 100,
+        flBonus: Math.round(flBonus * 100) / 100,
+        btBonus: Math.round(btBonus * 100) / 100,
+        pgScore: Math.round(pgScore * 100) / 100,
+        total:   Math.round(((qPts ?? 0) + racePts) * 100) / 100,
+        dnf,
       });
-      continue;
+
+    } else {
+      // ── Non-driver: single total points per round ─────────────────────────
+      let points: number | null = null;
+
+      if (assetType === 'principal') {
+        const entry = (cal.principalResults ?? []).find((e: any) => e.principalSlug === slug);
+        if (entry) points = entry.points;
+      } else if (assetType === 'pitCrew') {
+        const entry = (cal.pitCrewResults ?? []).find((e: any) => e.pitCrewSlug === slug);
+        if (entry) points = entry.points;
+      } else if (assetType === 'powerUnit') {
+        const entry = (cal.powerUnitResults ?? []).find((e: any) => e.powerUnitSlug === slug);
+        if (entry) points = entry.points;
+      }
+
+      // Skip rounds where this asset has no data yet
+      if (points === null) continue;
+
+      rows.push({
+        round: cal.round, flag, shortName,
+        qPts: null, qStage: null, qPos: null,
+        rPts: points, flBonus: 0, btBonus: 0, pgScore: 0,
+        total: points, dnf: false,
+      });
     }
-
-    const finish = myResult.finishPosition ?? 20;
-    const start  = myResult.startPosition  ?? 20;
-    const teammateFinish = teammateResult?.finishPosition ?? 20;
-
-    const rPts    = (FINISH_POINTS[finish] ?? 0) + 1;
-    const flBonus = myResult.fastestLap ? 5 : 0;
-    const btBonus = finish < teammateFinish ? 3 : 0;
-
-    const delta = start - finish;
-    let pgScore = 0;
-    if (delta > 0) {
-      pgScore = Math.min(delta * 2, 10);
-    } else if (delta < 0) {
-      const lost = -delta;
-      pgScore = start <= 10 ? -Math.min(lost * 2, 10) : -Math.min(lost, 5);
-    }
-
-    const total = (qPts ?? 0) + rPts + flBonus + btBonus + pgScore;
-
-    rows.push({
-      round: rr.round, flag, shortName,
-      qPts, qStage, qPos,
-      rPts, flBonus, btBonus, pgScore, total, dnf: false,
-    });
   }
 
   const totals = rows.reduce(
@@ -138,7 +195,11 @@ export async function GET(
   );
 
   const qCounts = { Q3: 0, Q2: 0, Q1: 0 };
-  for (const r of rows) if (r.qStage) qCounts[r.qStage as 'Q1' | 'Q2' | 'Q3']++;
+  for (const r of rows) {
+    if (r.qStage === 'Q3')      qCounts.Q3++;
+    else if (r.qStage === 'Q2') qCounts.Q2++;
+    else if (r.qStage === 'Q1') qCounts.Q1++;
+  }
 
   return NextResponse.json({ rows, totals, qCounts, season });
 }
