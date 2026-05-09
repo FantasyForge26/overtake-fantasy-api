@@ -26,6 +26,9 @@ import { connectDB } from '@/lib/db';
 import { Asset, League, Roster, RaceCalendar, ScoringLog } from '@/lib/models';
 import { calculateQualifyingDriverScore, type QualifyingDriverResult } from '@/lib/scoring/qualifying';
 import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
+import { calculatePrincipalSessionScore } from '@/lib/scoring/principal-session';
+import { calculatePowerUnitSessionScores, type CarSessionData } from '@/lib/scoring/powerunit-session';
+import { POWER_UNIT_MAP } from '@/lib/scoring/process-race-logic';
 
 const OPENF1_BASE     = 'https://api.openf1.org/v1';
 const MIN_BUFFER_MS   = 30 * 60 * 1000;       // 30 min after session end before scoring
@@ -208,6 +211,91 @@ export async function GET(req: NextRequest) {
 
   qualifyingResults.sort((a, b) => a.position - b.position);
 
+  // ── 10b. Compute principal + PU per-session entries for session='qualifying' ─
+  // These are written to RaceCalendar for mid-weekend visibility.
+  // Roster.totalPoints is NOT updated here — that happens in process-race-logic at race day.
+
+  // Load principal and PU assets
+  const principalAssets = await Asset.find({ season: 2026, assetType: 'principal', isActive: true }).lean() as any[];
+  const puAssets         = await Asset.find({ season: 2026, assetType: 'powerUnit',  isActive: true }).lean() as any[];
+
+  // teamName → principalSlug
+  const principalSlugByTeam = new Map<string, string>(
+    principalAssets.filter((a: any) => a.team).map((a: any) => [a.team as string, a.slug as string]),
+  );
+
+  // teamName → [carNumber, carNumber]
+  const carNumsByTeam = new Map<string, number[]>();
+  for (const a of driverAssets) {
+    if (!a.team || !a.carNumber) continue;
+    const arr = carNumsByTeam.get(a.team) ?? [];
+    arr.push(a.carNumber);
+    carNumsByTeam.set(a.team, arr);
+  }
+
+  // manufacturer → [puSlug, ...]
+  const puSlugsByManufacturer = new Map<string, string[]>();
+  for (const a of puAssets) {
+    if (!a.manufacturer) continue;
+    const arr = puSlugsByManufacturer.get(a.manufacturer) ?? [];
+    arr.push(a.slug);
+    puSlugsByManufacturer.set(a.manufacturer, arr);
+  }
+
+  // Principal entries for qualifying session
+  const newPrincipalEntries: any[] = [];
+  for (const [teamName, principalSlug] of principalSlugByTeam) {
+    const carNums = carNumsByTeam.get(teamName) ?? [];
+    const result  = calculatePrincipalSessionScore({
+      teamName,
+      driver1Position: carNums[0] != null ? (finalPosByDriverNum.get(carNums[0]) ?? null) : null,
+      driver2Position: carNums[1] != null ? (finalPosByDriverNum.get(carNums[1]) ?? null) : null,
+      session: 'qualifying',
+    });
+    newPrincipalEntries.push({
+      principalSlug,
+      session:     'qualifying',
+      avgPosition: result.avgPosition,
+      rawPoints:   result.rawPoints,
+      points:      result.points,
+    });
+  }
+
+  // PU entries for qualifying session
+  const carSessionData: CarSessionData[] = driverAssets
+    .filter((a: any) => a.carNumber && a.team && POWER_UNIT_MAP[a.team])
+    .map((a: any) => ({
+      driverNumber: a.carNumber as number,
+      manufacturer: POWER_UNIT_MAP[a.team] as string,
+      position:     finalPosByDriverNum.get(a.carNumber) ?? null,
+    }));
+
+  const puSessionScores = calculatePowerUnitSessionScores(carSessionData, 'qualifying');
+  const newPuEntries: any[] = [];
+  for (const score of puSessionScores) {
+    const slugs = puSlugsByManufacturer.get(score.manufacturer) ?? [];
+    for (const puSlug of slugs) {
+      newPuEntries.push({
+        powerUnitSlug: puSlug,
+        session:       'qualifying',
+        avgPosition:   score.avgPosition,
+        rank:          score.rank,
+        rawPoints:     score.rawPoints,
+        points:        score.points,
+      });
+    }
+  }
+
+  // Merge with existing calendar entries: keep non-qualifying sessions, replace qualifying
+  const existingPrincipalResults: any[] = (calendar.principalResults ?? []).filter(
+    (e: any) => e.session !== 'qualifying' && e.session != null,
+  );
+  const existingPuResults: any[] = (calendar.powerUnitResults ?? []).filter(
+    (e: any) => e.session !== 'qualifying' && e.session != null,
+  );
+  const mergedPrincipalResults = [...existingPrincipalResults, ...newPrincipalEntries];
+  const mergedPuResults        = [...existingPuResults, ...newPuEntries];
+
   // ── 11. Score all active league rosters ───────────────────────────────────
   const leagues = await League.find({ status: 'active' }).lean() as any[];
   const teamUpdateLog: { rosterId: string; leagueId: string; pointsAdded: number; boostedSlugs: string[] }[] = [];
@@ -271,6 +359,8 @@ export async function GET(req: NextRequest) {
           qualifyingScored:   true,
           qualifyingScoredAt: new Date(),
           qualifyingResults,
+          principalResults:   mergedPrincipalResults,
+          powerUnitResults:   mergedPuResults,
         },
       },
     );
