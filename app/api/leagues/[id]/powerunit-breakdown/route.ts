@@ -62,9 +62,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const puArr:   any[] = cal.powerUnitResults ?? [];
     const raceArr: any[] = cal.raceResults      ?? [];
 
-    // Power unit's pre-computed points for this round
-    const myEntry = puArr.find((e: any) => e.powerUnitSlug === slug);
-    if (!myEntry) continue;
+    // Power unit's pre-computed points for this round (sum across all sessions)
+    const myEntries = puArr.filter((e: any) => e.powerUnitSlug === slug);
+    if (!myEntries.length) continue;
 
     const flag      = COUNTRY_FLAGS[cal.country as string] ?? '🏁';
     const shortName = (cal.country as string) ?? `R${cal.round}`;
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? Math.round(carPositions.reduce((a, b) => a + b, 0) / carPositions.length)
       : 0;
 
-    const rPts = myEntry.points as number;
+    const rPts = Math.round(myEntries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
 
     rows.push({
       round:        cal.round,

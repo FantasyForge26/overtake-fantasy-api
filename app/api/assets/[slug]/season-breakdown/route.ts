@@ -160,14 +160,14 @@ export async function GET(
       let points: number | null = null;
 
       if (assetType === 'principal') {
-        const entry = (cal.principalResults ?? []).find((e: any) => e.principalSlug === slug);
-        if (entry) points = entry.points;
+        const entries = (cal.principalResults ?? []).filter((e: any) => e.principalSlug === slug);
+        if (entries.length) points = Math.round(entries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
       } else if (assetType === 'pitCrew') {
         const entry = (cal.pitCrewResults ?? []).find((e: any) => e.pitCrewSlug === slug);
         if (entry) points = entry.points;
       } else if (assetType === 'powerUnit') {
-        const entry = (cal.powerUnitResults ?? []).find((e: any) => e.powerUnitSlug === slug);
-        if (entry) points = entry.points;
+        const entries = (cal.powerUnitResults ?? []).filter((e: any) => e.powerUnitSlug === slug);
+        if (entries.length) points = Math.round(entries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
       }
 
       // Skip rounds where this asset has no data yet

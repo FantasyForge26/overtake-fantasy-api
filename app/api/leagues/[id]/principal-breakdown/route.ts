@@ -56,9 +56,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const principalArr: any[] = cal.principalResults ?? [];
     const raceArr:      any[] = cal.raceResults      ?? [];
 
-    // Principal's pre-computed points for this round
-    const myEntry = principalArr.find((e: any) => e.principalSlug === slug);
-    if (!myEntry) continue;
+    // Principal's pre-computed points for this round (sum across all sessions)
+    const myEntries = principalArr.filter((e: any) => e.principalSlug === slug);
+    if (!myEntries.length) continue;
 
     const flag      = COUNTRY_FLAGS[cal.country as string] ?? '🏁';
     const shortName = (cal.country as string) ?? `R${cal.round}`;
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const d1Pos = d1Entry && !d1Entry.notClassified && !d1Entry.dsq ? (d1Entry.position ?? null) : null;
     const d2Pos = d2Entry && !d2Entry.notClassified && !d2Entry.dsq ? (d2Entry.position ?? null) : null;
 
-    const rPts = myEntry.points as number;
+    const rPts = Math.round(myEntries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
 
     rows.push({
       round:       cal.round,
