@@ -24,6 +24,9 @@ import { connectDB } from '@/lib/db';
 import { Asset, League, Roster, RaceCalendar, ScoringLog } from '@/lib/models';
 import { calculateDriverSprintScore } from '@/lib/otf-calculator';
 import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
+import { calculatePrincipalSessionScore } from '@/lib/scoring/principal-session';
+import { calculatePowerUnitSessionScores, type CarSessionData } from '@/lib/scoring/powerunit-session';
+import { POWER_UNIT_MAP } from '@/lib/scoring/process-race-logic';
 
 const OPENF1_BASE     = 'https://api.openf1.org/v1';
 const MIN_BUFFER_MS   = 30 * 60 * 1000;       // 30 min after session end before scoring
@@ -251,6 +254,76 @@ export async function GET(req: NextRequest) {
 
   sprintRaceResults.sort((a, b) => a.position - b.position);
 
+  // ── 12b. Compute principal + PU per-session entries for session='sprintRace' ─
+  // Written to RaceCalendar for mid-weekend visibility only.
+  // Roster.totalPoints is NOT updated here — that happens in process-race-logic at race day.
+
+  const principalAssets = await Asset.find({ season: 2026, assetType: 'principal', isActive: true }).lean() as any[];
+  const puAssets         = await Asset.find({ season: 2026, assetType: 'powerUnit',  isActive: true }).lean() as any[];
+
+  const principalSlugByTeam = new Map<string, string>(
+    principalAssets.filter((a: any) => a.team).map((a: any) => [a.team as string, a.slug as string]),
+  );
+
+  const puSlugsByManufacturer = new Map<string, string[]>();
+  for (const a of puAssets) {
+    if (!a.manufacturer) continue;
+    const arr = puSlugsByManufacturer.get(a.manufacturer) ?? [];
+    arr.push(a.slug);
+    puSlugsByManufacturer.set(a.manufacturer, arr);
+  }
+
+  const newPrincipalEntries: any[] = [];
+  for (const [teamName, principalSlug] of principalSlugByTeam) {
+    const carNums = carNumsByTeam.get(teamName) ?? [];
+    const result  = calculatePrincipalSessionScore({
+      teamName,
+      driver1Position: carNums[0] != null ? (finalPosByDriverNum.get(carNums[0]) ?? null) : null,
+      driver2Position: carNums[1] != null ? (finalPosByDriverNum.get(carNums[1]) ?? null) : null,
+      session: 'sprintRace',
+    });
+    newPrincipalEntries.push({
+      principalSlug,
+      session:     'sprintRace',
+      avgPosition: result.avgPosition,
+      rawPoints:   result.rawPoints,
+      points:      result.points,
+    });
+  }
+
+  const carSessionData: CarSessionData[] = driverAssets
+    .filter((a: any) => a.carNumber && a.team && POWER_UNIT_MAP[a.team])
+    .map((a: any) => ({
+      driverNumber: a.carNumber as number,
+      manufacturer: POWER_UNIT_MAP[a.team] as string,
+      position:     finalPosByDriverNum.get(a.carNumber) ?? null,
+    }));
+
+  const puSessionScores = calculatePowerUnitSessionScores(carSessionData, 'sprintRace');
+  const newPuEntries: any[] = [];
+  for (const score of puSessionScores) {
+    const slugs = puSlugsByManufacturer.get(score.manufacturer) ?? [];
+    for (const puSlug of slugs) {
+      newPuEntries.push({
+        powerUnitSlug: puSlug,
+        session:       'sprintRace',
+        avgPosition:   score.avgPosition,
+        rank:          score.rank,
+        rawPoints:     score.rawPoints,
+        points:        score.points,
+      });
+    }
+  }
+
+  const existingPrincipalResults: any[] = (calendar.principalResults ?? []).filter(
+    (e: any) => e.session !== 'sprintRace' && e.session != null,
+  );
+  const existingPuResults: any[] = (calendar.powerUnitResults ?? []).filter(
+    (e: any) => e.session !== 'sprintRace' && e.session != null,
+  );
+  const mergedPrincipalResults = [...existingPrincipalResults, ...newPrincipalEntries];
+  const mergedPuResults        = [...existingPuResults, ...newPuEntries];
+
   // ── 13. Score all active league rosters ───────────────────────────────────
   const leagues = await League.find({ status: 'active' }).lean() as any[];
   const teamUpdateLog: { rosterId: string; leagueId: string; pointsAdded: number; boostedSlugs: string[] }[] = [];
@@ -314,6 +387,8 @@ export async function GET(req: NextRequest) {
           sprintRaceScored:   true,
           sprintRaceScoredAt: new Date(),
           sprintRaceResults,
+          principalResults:   mergedPrincipalResults,
+          powerUnitResults:   mergedPuResults,
         },
       },
     );
