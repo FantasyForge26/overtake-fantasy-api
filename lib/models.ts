@@ -391,6 +391,9 @@ const RaceCalendarSchema = new Schema({
   }],
   principalResults: [{
     principalSlug: String,
+    session:       String,
+    avgPosition:   Number,
+    rawPoints:     Number,
     points:        Number,
   }],
   pitCrewResults: [{
@@ -403,6 +406,10 @@ const RaceCalendarSchema = new Schema({
   }],
   powerUnitResults: [{
     powerUnitSlug: String,
+    session:       String,
+    avgPosition:   Number,
+    rank:          Number,
+    rawPoints:     Number,
     points:        Number,
   }],
 });
