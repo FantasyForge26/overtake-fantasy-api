@@ -11,6 +11,38 @@ export interface PickDoc {
 }
 
 /**
+ * Returns the next asset type the drafter should pick, or null if their roster is full.
+ * Uses fill-in-order priority by default (driver, driver, principal, pitCrew, pitCrew, powerUnit)
+ * with a late-round override: when picks remaining <= unfilled slots, prioritize rarest slots
+ * first (powerUnit > principal > pitCrew > driver) so users don't end up missing a category.
+ */
+export function nextNeededAssetType(
+  roster: any,
+  currentRound: number,
+  totalRounds: number,
+): string | null {
+  const needed: string[] = [];
+  if (!roster.driver1AssetId)   needed.push('driver');
+  if (!roster.driver2AssetId)   needed.push('driver');
+  if (!roster.principalAssetId) needed.push('principal');
+  if (!roster.pitCrew1AssetId)  needed.push('pitCrew');
+  if (!roster.pitCrew2AssetId)  needed.push('pitCrew');
+  if (!roster.powerUnitAssetId) needed.push('powerUnit');
+
+  if (needed.length === 0) return null;
+
+  const picksRemaining = totalRounds - currentRound + 1;
+  if (picksRemaining <= needed.length) {
+    const priority = ['powerUnit', 'principal', 'pitCrew', 'driver'];
+    for (const type of priority) {
+      if (needed.includes(type)) return type;
+    }
+  }
+
+  return needed[0];
+}
+
+/**
  * Atomically claims an asset from the draft session in a single MongoDB operation.
  *
  * The filter requires ALL of:

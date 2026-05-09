@@ -4,33 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
-
-// Returns the assetType the drafter needs to fill next, in priority order
-function neededAssetType(roster: any, currentRound: number, totalRounds: number): string {
-  const needed: string[] = [];
-
-  if (!roster.driver1AssetId)   needed.push('driver');
-  if (!roster.driver2AssetId)   needed.push('driver');
-  if (!roster.principalAssetId) needed.push('principal');
-  if (!roster.pitCrew1AssetId)  needed.push('pitCrew');
-  if (!roster.pitCrew2AssetId)  needed.push('pitCrew');
-  if (!roster.powerUnitAssetId) needed.push('powerUnit');
-
-  const picksRemaining = totalRounds - currentRound + 1;
-
-  // If we have more needs than picks remaining, prioritize rarest asset types first
-  if (picksRemaining <= needed.length) {
-    // Pick the one we have fewest of — prioritize unique slots first
-    const priority = ['powerUnit', 'principal', 'pitCrew', 'driver'];
-    for (const type of priority) {
-      if (needed.includes(type)) return type;
-    }
-  }
-
-  // Default: fill in order
-  return needed[0];
-}
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType } from '@/lib/pick-helpers';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -66,7 +40,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
   }
 
-  const assetType = neededAssetType(roster, draftSession.currentRound, draftSession.totalRounds);
+  const assetType = nextNeededAssetType(roster, draftSession.currentRound, draftSession.totalRounds);
+  if (!assetType) return NextResponse.json({ error: 'Roster is already full' }, { status: 400 });
 
   const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
 

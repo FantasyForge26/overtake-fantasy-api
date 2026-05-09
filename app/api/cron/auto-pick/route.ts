@@ -2,16 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
-
-function neededAssetTypes(roster: any): string[] {
-  const needed: string[] = [];
-  if (!roster.driver1AssetId || !roster.driver2AssetId) needed.push('driver');
-  if (!roster.principalAssetId)                         needed.push('principal');
-  if (!roster.pitCrew1AssetId || !roster.pitCrew2AssetId) needed.push('pitCrew');
-  if (!roster.powerUnitAssetId)                         needed.push('powerUnit');
-  return needed;
-}
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType } from '@/lib/pick-helpers';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -45,9 +36,9 @@ export async function GET(req: NextRequest) {
     let roster = await Roster.findOne({ leagueId, userId });
     if (!roster) continue;
 
-    let neededTypes = neededAssetTypes(roster);
+    let neededType = nextNeededAssetType(roster, draftSession.currentRound, draftSession.totalRounds);
 
-    while (neededTypes.length === 0 && draftSession.currentPickIndex < draftSession.draftOrder.length - 1) {
+    while (!neededType && draftSession.currentPickIndex < draftSession.draftOrder.length - 1) {
       draftSession.currentPickIndex += 1;
       const nextDrafterId = draftSession.draftOrder[draftSession.currentPickIndex];
       const nextRoster = await Roster.findOne({
@@ -57,10 +48,10 @@ export async function GET(req: NextRequest) {
       if (!nextRoster) break;
       userId = nextDrafterId.toString();
       roster = nextRoster;
-      neededTypes = neededAssetTypes(roster);
+      neededType = nextNeededAssetType(nextRoster, draftSession.currentRound, draftSession.totalRounds);
     }
 
-    if (neededTypes.length === 0) {
+    if (!neededType) {
       // All rosters full — mark draft completed
       draftSession.status = 'completed';
       draftSession.completedAt = new Date();
@@ -90,16 +81,16 @@ export async function GET(req: NextRequest) {
     if (queuedPickId) {
       const queued = await Asset.findOne({
         _id: queuedPickId,
-        assetType: { $in: neededTypes },
+        assetType: neededType,
         isActive: true,
       }).select('_id assetType');
       if (queued) bestAsset = queued;
     }
 
-    // Fall back to the highest OTF asset across all needed slot types
+    // Fall back to the highest OTF asset for the needed slot type
     if (!bestAsset) {
       bestAsset = await Asset
-        .findOne({ _id: { $in: availableIds }, assetType: { $in: neededTypes }, isActive: true })
+        .findOne({ _id: { $in: availableIds }, assetType: neededType, isActive: true })
         .sort({ otfRating: -1 })
         .select('_id assetType');
     }
