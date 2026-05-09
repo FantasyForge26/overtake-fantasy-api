@@ -38,6 +38,9 @@ const AssetSchema = new Schema({
   q1Count:            { type: Number, default: 0 },
   q2Count:            { type: Number, default: 0 },
   q3Count:            { type: Number, default: 0 },
+  // Pit crew stats (pitCrew assets only)
+  fastestStopCount:   { type: Number, default: 0 },
+  avgPitStopTime:     { type: Number },
   age:                { type: Number },
   teamStrength:       { type: Number, default: 50 },
   boostsRemaining:    { type: Number, default: 12 },
