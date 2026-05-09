@@ -11,13 +11,17 @@ export interface CarPitData {
 }
 
 export interface PitCrewScore {
-  driverNumber:    number;
-  carNumber:       number;
-  fastestStopRank: number; // 0 = no stops
+  driverNumber:     number;
+  carNumber:        number;
+  fastestStopRank:  number; // 0 = no stops
   fastestStopBonus: number;
-  avgStopRank:     number; // 0 = no stops
-  avgStopBonus:    number;
-  total:           number;
+  avgStopRank:      number; // 0 = no stops
+  avgStopBonus:     number;
+  total:            number;
+  stopCount:        number;
+  avgStopTime:      number | null;
+  fastestStop:      number | null;
+  wasOverallFastest: boolean;
 }
 
 export function calculateAllPitCrewScores(allCars: CarPitData[]): PitCrewScore[] {
@@ -47,12 +51,23 @@ export function calculateAllPitCrewScores(allCars: CarPitData[]): PitCrewScore[]
     withAvg.map((m, i) => [m.driverNumber, i + 1]),
   );
 
+  // Overall fastest single stop across all crews (for wasOverallFastest)
+  const overallFastest = withFastest.length > 0 ? withFastest[0].fastest! : null;
+
   return allCars.map(car => {
     const fastestStopRank  = fastestRankMap.get(car.driverNumber) ?? 0;
     const avgStopRank      = avgRankMap.get(car.driverNumber) ?? 0;
     const fastestStopBonus = fastestStopRank > 0 ? rankBonus(fastestStopRank) : 0;
     const avgStopBonus     = avgStopRank > 0 ? rankBonus(avgStopRank) : 0;
     const total            = Math.round((fastestStopBonus + avgStopBonus) * 100) / 100;
+
+    const stopCount   = car.pitStops.length;
+    const fastestStop = stopCount > 0 ? Math.round(Math.min(...car.pitStops) * 100) / 100 : null;
+    const avgStopTime = stopCount > 0
+      ? Math.round((car.pitStops.reduce((a, b) => a + b, 0) / stopCount) * 100) / 100
+      : null;
+    const wasOverallFastest = fastestStop !== null && overallFastest !== null
+      && Math.abs(fastestStop - overallFastest) < 0.001;
 
     return {
       driverNumber: car.driverNumber,
@@ -62,6 +77,10 @@ export function calculateAllPitCrewScores(allCars: CarPitData[]): PitCrewScore[]
       avgStopRank,
       avgStopBonus,
       total,
+      stopCount,
+      avgStopTime,
+      fastestStop,
+      wasOverallFastest,
     };
   });
 }

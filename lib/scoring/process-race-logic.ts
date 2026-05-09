@@ -310,8 +310,12 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     const pitCrewResultsForCal = scores.pitCrews
       .filter(p => pitCrewSlugByCarNum.has(p.carNumber))
       .map(p => ({
-        pitCrewSlug: pitCrewSlugByCarNum.get(p.carNumber)!,
-        points:      Math.round(p.total * 100) / 100,
+        pitCrewSlug:       pitCrewSlugByCarNum.get(p.carNumber)!,
+        points:            Math.round(p.total * 100) / 100,
+        stopCount:         p.stopCount,
+        avgStopTime:       p.avgStopTime,
+        fastestStop:       p.fastestStop,
+        wasOverallFastest: p.wasOverallFastest,
       }));
 
     // One entry per PU asset — assets sharing a manufacturer all get the same manufacturer score
