@@ -242,8 +242,6 @@ async function seedCalendar() {
     ...r,
     season: 2026,
     cancelled: (r as any).cancelled ?? false,
-    // selectionDeadline = qualifyingDate - 1 hour
-    selectionDeadline: minus1h(r.qualifyingDate.toISOString()),
   }));
 
   await RaceCalendar.insertMany(docs);

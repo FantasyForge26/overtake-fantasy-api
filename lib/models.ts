@@ -341,7 +341,6 @@ const RaceCalendarSchema = new Schema({
   raceDate:          { type: Date, required: true },
   qualifyingDate:    { type: Date, required: true },
   sprintDate:        { type: Date },
-  selectionDeadline: { type: Date, required: true },
   isSprint:          { type: Boolean, default: false },
   cancelled:         { type: Boolean, default: false },
   meetingKey:           { type: Number, default: null, index: true },
