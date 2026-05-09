@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
-import { Asset, RaceResult, RaceCalendar } from '@/lib/models';
+import { Asset, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
-import { PU_FINISH_POINTS } from '@/lib/otf-calculator';
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'Australia': '🇦🇺', 'China': '🇨🇳', 'Japan': '🇯🇵',
@@ -47,47 +46,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     for (const t of teams) suppliedTeamSlugs.add(t);
   }
 
-  // Find all drivers across those teams
+  // Find all drivers across those teams for carPositions reconstruction
   const teamDrivers = await Asset.find({
     assetType: 'driver',
     season: 2026,
     teamSlug: { $in: Array.from(suppliedTeamSlugs) },
   }).lean() as any[];
-  const driverSlugs = new Set(teamDrivers.map((d: any) => d.slug));
+  const driverSlugs = new Set(teamDrivers.map((d: any) => d.slug as string));
 
-  // Race calendar for flags / country names
-  const calendar = await RaceCalendar.find({ season: 2026 }).lean() as any[];
-  const calByRound: Record<number, any> = {};
-  for (const c of calendar) calByRound[c.round] = c;
-
-  // Scored race results for this league
-  const raceResults = await RaceResult.find({ leagueId, season: 2026, raceScored: true })
-    .sort({ round: 1 })
-    .lean() as any[];
+  const calendars = await RaceCalendar.find({ season: 2026 }).sort({ round: 1 }).lean() as any[];
 
   const rows: any[] = [];
 
-  for (const rr of raceResults) {
-    const driverResults: any[] = rr.driverResults ?? [];
+  for (const cal of calendars) {
+    const puArr:   any[] = cal.powerUnitResults ?? [];
+    const raceArr: any[] = cal.raceResults      ?? [];
 
-    // Collect finish positions for all manufacturer-supplied drivers
-    const carPositions: number[] = [];
-    for (const dr of driverResults) {
-      if (!driverSlugs.has(dr.driverSlug)) continue;
-      carPositions.push(dr.dnf || dr.notClassified ? 22 : (dr.finishPosition ?? 22));
-    }
-    if (carPositions.length === 0) continue;
+    // Power unit's pre-computed points for this round
+    const myEntry = puArr.find((e: any) => e.powerUnitSlug === slug);
+    if (!myEntry) continue;
 
-    const cal = calByRound[rr.round];
-    const flag = cal ? (COUNTRY_FLAGS[cal.country] ?? '🏁') : '🏁';
-    const shortName = cal?.country ?? `R${rr.round}`;
+    const flag      = COUNTRY_FLAGS[cal.country as string] ?? '🏁';
+    const shortName = (cal.country as string) ?? `R${cal.round}`;
 
-    const avg = carPositions.reduce((a, b) => a + b, 0) / carPositions.length;
-    const avgPos = Math.round(avg);
-    const rPts = PU_FINISH_POINTS[avgPos] ?? 0;
+    // Reconstruct carPositions from RaceCalendar.raceResults for display (DNF = 22)
+    const carPositions: number[] = raceArr
+      .filter((e: any) => driverSlugs.has(e.driverSlug))
+      .map((e: any) => (e.notClassified || e.dsq) ? 22 : (e.position ?? 22));
+
+    const avgPos = carPositions.length > 0
+      ? Math.round(carPositions.reduce((a, b) => a + b, 0) / carPositions.length)
+      : 0;
+
+    const rPts = myEntry.points as number;
 
     rows.push({
-      round:        rr.round,
+      round:        cal.round,
       flag,
       shortName,
       carCount:     carPositions.length,
