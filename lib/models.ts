@@ -394,8 +394,12 @@ const RaceCalendarSchema = new Schema({
     points:        Number,
   }],
   pitCrewResults: [{
-    pitCrewSlug: String,
-    points:      Number,
+    pitCrewSlug:       String,
+    points:            Number,
+    stopCount:         Number,
+    avgStopTime:       Number,
+    fastestStop:       Number,
+    wasOverallFastest: Boolean,
   }],
   powerUnitResults: [{
     powerUnitSlug: String,

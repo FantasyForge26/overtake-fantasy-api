@@ -49,17 +49,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const shortName = (cal.country as string) ?? `R${cal.round}`;
     const rPts      = myEntry.points as number;
 
-    // Stop-time details are not stored in RaceCalendar arrays — UI renders null as '—'
     rows.push({
-      round:            cal.round,
+      round:             cal.round,
       flag,
       shortName,
-      stopCount:        null,
-      avgStopTime:      null,
-      fastestStop:      null,
-      wasOverallFastest: null,
+      stopCount:         myEntry.stopCount         ?? null,
+      avgStopTime:       myEntry.avgStopTime        ?? null,
+      fastestStop:       myEntry.fastestStop        ?? null,
+      wasOverallFastest: myEntry.wasOverallFastest  ?? null,
       rPts,
-      tot:              rPts,
+      tot:               rPts,
     });
   }
 
