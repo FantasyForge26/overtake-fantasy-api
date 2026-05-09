@@ -9,6 +9,8 @@ import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
 import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
+import { calculatePrincipalSessionScore, SessionType as PrincipalSessionType } from '@/lib/scoring/principal-session';
+import { calculatePowerUnitSessionScores, CarSessionData as PuCarSessionData } from '@/lib/scoring/powerunit-session';
 
 export const POWER_UNIT_MAP: Record<string, string> = {
   'Red Bull Racing': 'Ford Red Bull Powertrains',
@@ -66,7 +68,135 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
   // 3. Calculate all scores
   const { scores, newPrincipalStreakStates } = calculateRaceWeekendScores(weekendData, streakStates);
 
-  // 4. Build lookup maps
+  // 4. Load all 2026 assets (needed for per-session principal/PU scoring below)
+  const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).lean();
+  const assetById = new Map<string, any>(allAssets.map(a => [a._id.toString(), a]));
+
+  // carNumber lookup for sprint quali position mapping (driverSlug → carNumber)
+  const carNumByDriverSlug = new Map<string, number>();
+  for (const a of allAssets) {
+    if (a.assetType === 'driver' && a.carNumber) carNumByDriverSlug.set(a.slug, a.carNumber);
+  }
+
+  // ── Per-session principal + PU scoring ──────────────────────────────────────
+
+  // Build teamName → [driverNumber, ...] and driverNumber → teamName from pitData
+  const driversByTeamName = new Map<string, number[]>();
+  for (const pd of weekendData.pitData) {
+    const arr = driversByTeamName.get(pd.teamName) ?? [];
+    arr.push(pd.driverNumber);
+    driversByTeamName.set(pd.teamName, arr);
+  }
+
+  // Position maps (driverNumber → position | null) per session
+  const qualiPosByNum = new Map<number, number | null>();
+  for (const q of weekendData.qualifyingResults) {
+    qualiPosByNum.set(q.driverNumber, q.finalPosition ?? null);
+  }
+
+  const racePosByNum = new Map<number, number | null>();
+  for (const r of weekendData.raceResults) {
+    racePosByNum.set(r.driverNumber, (r.status === 'DNF' || r.status === 'DSQ') ? null : (r.finishPosition ?? null));
+  }
+
+  const sprintRacePosByNum = new Map<number, number | null>();
+  if (weekendData.hasSprint && (weekendData as any).sprintResults) {
+    for (const s of (weekendData as any).sprintResults) {
+      sprintRacePosByNum.set(s.driverNumber, s.finishPosition ?? null);
+    }
+  }
+
+  // Sprint quali positions from raceCalendar (written by live cron before processRace runs)
+  const sprintQualiPosByNum = new Map<number, number | null>();
+  if (weekendData.hasSprint && raceCalendar?.sprintQualiResults) {
+    for (const e of (raceCalendar.sprintQualiResults as any[])) {
+      const cn = carNumByDriverSlug.get(e.driverSlug);
+      if (cn != null) sprintQualiPosByNum.set(cn, e.position ?? null);
+    }
+  }
+
+  const sessionList: PrincipalSessionType[] = weekendData.hasSprint
+    ? ['sprintQuali', 'sprintRace', 'qualifying', 'race']
+    : ['qualifying', 'race'];
+
+  const posMapForSession = (s: PrincipalSessionType): Map<number, number | null> => {
+    switch (s) {
+      case 'sprintQuali': return sprintQualiPosByNum;
+      case 'sprintRace':  return sprintRacePosByNum;
+      case 'qualifying':  return qualiPosByNum;
+      case 'race':        return racePosByNum;
+    }
+  };
+
+  // principalSlug lookup: asset.team → principalSlug
+  const principalSlugByTeamNameMap = new Map<string, string>();
+  for (const a of allAssets) {
+    if (a.assetType === 'principal' && a.team) principalSlugByTeamNameMap.set(a.team, a.slug);
+  }
+
+  // Compute per-session principal entries; build principalScoreByTeam for roster + asset scoring
+  const sessionPrincipalEntries: any[] = [];
+  const principalScoreByTeam = new Map<string, number>();
+
+  for (const [teamName, driverNums] of driversByTeamName) {
+    const principalSlug = principalSlugByTeamNameMap.get(teamName);
+    if (!principalSlug) continue;
+    for (const session of sessionList) {
+      const posMap = posMapForSession(session);
+      const result = calculatePrincipalSessionScore({
+        teamName,
+        driver1Position: driverNums[0] != null ? (posMap.get(driverNums[0]) ?? null) : null,
+        driver2Position: driverNums[1] != null ? (posMap.get(driverNums[1]) ?? null) : null,
+        session,
+      });
+      sessionPrincipalEntries.push({
+        principalSlug,
+        session,
+        avgPosition: result.avgPosition,
+        rawPoints:   result.rawPoints,
+        points:      result.points,
+      });
+      principalScoreByTeam.set(teamName,
+        Math.round(((principalScoreByTeam.get(teamName) ?? 0) + result.points) * 100) / 100,
+      );
+    }
+  }
+
+  // Compute per-session PU entries; build puScoreByManufacturer for roster + asset scoring
+  const sessionPuEntries: any[] = [];
+  const puScoreByManufacturer = new Map<string, number>();
+
+  for (const session of sessionList) {
+    const posMap = posMapForSession(session);
+    const carData: PuCarSessionData[] = (weekendData.pitData as any[])
+      .filter(pd => POWER_UNIT_MAP[pd.teamName])
+      .map(pd => ({
+        driverNumber: pd.driverNumber,
+        manufacturer: POWER_UNIT_MAP[pd.teamName],
+        position:     posMap.get(pd.driverNumber) ?? null,
+      }));
+
+    const sessionScores = calculatePowerUnitSessionScores(carData, session);
+
+    for (const score of sessionScores) {
+      const puAssets = allAssets.filter(a => a.assetType === 'powerUnit' && a.manufacturer === score.manufacturer);
+      for (const puAsset of puAssets) {
+        sessionPuEntries.push({
+          powerUnitSlug: puAsset.slug,
+          session,
+          avgPosition:   score.avgPosition,
+          rank:          score.rank,
+          rawPoints:     score.rawPoints,
+          points:        score.points,
+        });
+      }
+      puScoreByManufacturer.set(score.manufacturer,
+        Math.round(((puScoreByManufacturer.get(score.manufacturer) ?? 0) + score.points) * 100) / 100,
+      );
+    }
+  }
+
+  // 5. Build driver + pit crew lookup maps
   const driverScoreByNum = new Map<number, number>();
 
   // Skip qualifying if already scored live by score-main-quali cron (prevents double-scoring)
@@ -87,18 +217,8 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     driverScoreByNum.set(r.driverNumber, (driverScoreByNum.get(r.driverNumber) ?? 0) + r.total);
   }
 
-  const principalScoreByTeam = new Map<string, number>();
-  for (const p of scores.principals) principalScoreByTeam.set(p.teamName, p.total);
-
   const pitCrewScoreByNum = new Map<number, number>();
   for (const pc of scores.pitCrews) pitCrewScoreByNum.set(pc.carNumber, pc.total);
-
-  const puScoreByManufacturer = new Map<string, number>();
-  for (const pu of scores.powerUnits) puScoreByManufacturer.set(pu.manufacturer, pu.points);
-
-  // 5. Load all 2026 assets
-  const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).lean();
-  const assetById = new Map<string, any>(allAssets.map(a => [a._id.toString(), a]));
 
   // 5b. Build qualifying result lookup by driver number (for q-stage tracking)
   const qualByDriverNum = new Map<number, import('@/lib/scoring/qualifying').QualifyingDriverResult>();
@@ -262,27 +382,18 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     );
   }
 
-  // 9. Persist per-asset weekend breakdown to RaceCalendar (additive — does not change scoring math)
+  // 9. Persist per-asset weekend breakdown to RaceCalendar
   if (raceCalendar) {
-    // Build slug/points lookup maps from already-loaded allAssets
+    // Build driver + pit crew slug maps from already-loaded allAssets
     const driverSlugByCarNum  = new Map<number, string>();
-    const principalSlugByTeam = new Map<string, string>();
     const pitCrewSlugByCarNum = new Map<number, string>();
 
     for (const a of allAssets) {
-      if (a.assetType === 'driver' && a.carNumber)   driverSlugByCarNum.set(a.carNumber, a.slug);
-      if (a.assetType === 'principal' && a.team)     principalSlugByTeam.set(a.team, a.slug);
+      if (a.assetType === 'driver' && a.carNumber) driverSlugByCarNum.set(a.carNumber, a.slug);
       if (a.assetType === 'pitCrew') {
         const cn = a.carNumber ?? pitCrewCarNumber(a.slug ?? '');
         if (cn) pitCrewSlugByCarNum.set(cn, a.slug);
       }
-    }
-
-    // Power units: manufacturer → points (multiple assets can share a manufacturer,
-    // so we invert: iterate assets and look up points rather than collapsing to one slug)
-    const puPointsByManufacturer = new Map<string, number>();
-    for (const p of scores.powerUnits) {
-      puPointsByManufacturer.set(p.manufacturer, Math.round(p.points * 100) / 100);
     }
 
     // Race results: race-day points only (not qualifying or sprint — those have their own arrays)
@@ -300,12 +411,8 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
       }))
       .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
 
-    const principalResultsForCal = scores.principals
-      .filter(p => principalSlugByTeam.has(p.teamName))
-      .map(p => ({
-        principalSlug: principalSlugByTeam.get(p.teamName)!,
-        points:        Math.round(p.total * 100) / 100,
-      }));
+    // principalResults: per-session entries computed above (replaces old single-entry per round)
+    const principalResultsForCal = sessionPrincipalEntries;
 
     const pitCrewResultsForCal = scores.pitCrews
       .filter(p => pitCrewSlugByCarNum.has(p.carNumber))
@@ -318,13 +425,8 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
         wasOverallFastest: p.wasOverallFastest,
       }));
 
-    // One entry per PU asset — assets sharing a manufacturer all get the same manufacturer score
-    const powerUnitResultsForCal = allAssets
-      .filter(a => a.assetType === 'powerUnit' && a.manufacturer && puPointsByManufacturer.has(a.manufacturer))
-      .map(a => ({
-        powerUnitSlug: a.slug as string,
-        points:        puPointsByManufacturer.get(a.manufacturer)!,
-      }));
+    // powerUnitResults: per-session entries computed above (replaces old single-entry per round)
+    const powerUnitResultsForCal = sessionPuEntries;
 
     await RaceCalendar.findOneAndUpdate(
       { _id: (raceCalendar as any)._id },
