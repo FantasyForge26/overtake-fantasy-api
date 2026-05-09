@@ -220,6 +220,7 @@ const DraftSessionSchema = new Schema({
   completedAt:          { type: Date },
   reminderSentAt:       { type: Date },
 });
+DraftSessionSchema.index({ leagueId: 1 });
 
 // ---------------------------------------------------------------------------
 // DraftQueue
