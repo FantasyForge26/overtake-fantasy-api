@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
-import { RaceResult, Asset, RaceCalendar } from '@/lib/models';
+import { Asset, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
-import { FINISH_POINTS, calculateDriverQualifyingScore } from '@/lib/otf-calculator';
+import { calculateRaceDriverScore, type RaceDriverResult } from '@/lib/scoring/race';
+import { calculateQualifyingDriverScore, type QualifyingDriverResult } from '@/lib/scoring/qualifying';
 
 const COUNTRY_FLAGS: Record<string, string> = {
   'Australia': '🇦🇺', 'China': '🇨🇳', 'Japan': '🇯🇵',
@@ -16,12 +17,6 @@ const COUNTRY_FLAGS: Record<string, string> = {
   'Azerbaijan': '🇦🇿', 'Singapore': '🇸🇬', 'Mexico': '🇲🇽',
   'Brazil': '🇧🇷', 'Qatar': '🇶🇦', 'Abu Dhabi': '🇦🇪',
 };
-
-function deriveQStage(pos: number): 'Q1' | 'Q2' | 'Q3' {
-  if (pos <= 10) return 'Q3';
-  if (pos <= 15) return 'Q2';
-  return 'Q1';
-}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -38,90 +33,130 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const asset = await Asset.findOne({ slug }).lean() as any;
+  const asset = await Asset.findOne({ slug, season: 2026 }).lean() as any;
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
 
-  const teammate = await Asset.findOne({
-    teamSlug: asset.teamSlug,
-    assetType: 'driver',
-    slug: { $ne: slug },
-  }).lean() as any;
+  // Load all 2026 driver assets to build slug → {driverNumber, teamName} map.
+  // Needed to reconstruct full RaceDriverResult[] / QualifyingDriverResult[] so that
+  // teammate comparison in calculateRaceDriverScore / calculateQualifyingDriverScore works.
+  const allDriverAssets = await Asset.find({ season: 2026, assetType: 'driver', isActive: true }).lean() as any[];
 
-  const raceResults = await RaceResult.find({ leagueId, season: 2026 }).sort({ round: 1 }).lean() as any[];
+  const slugToDriver = new Map<string, { driverNumber: number; teamName: string }>();
+  for (const d of allDriverAssets) {
+    if (d.carNumber && d.team) {
+      slugToDriver.set(d.slug as string, { driverNumber: d.carNumber as number, teamName: d.team as string });
+    }
+  }
 
-  const calendar = await RaceCalendar.find({ season: 2026 }).lean() as any[];
-  const calByRound: Record<number, any> = {};
-  for (const r of calendar) calByRound[r.round] = r;
+  const myDriverInfo = slugToDriver.get(slug) ?? null;
+
+  const calendars = await RaceCalendar.find({ season: 2026 }).sort({ round: 1 }).lean() as any[];
 
   const rows: any[] = [];
 
-  for (const rr of raceResults) {
-    const myResult = (rr.driverResults ?? []).find((d: any) => d.driverSlug === slug);
-    if (!myResult) continue;
+  for (const cal of calendars) {
+    const raceArr:       any[] = cal.raceResults       ?? [];
+    const qualiArr:      any[] = cal.qualifyingResults ?? [];
+    const sprintQualiArr: any[] = cal.sprintQualiResults ?? [];
+    const sprintRaceArr:  any[] = cal.sprintRaceResults  ?? [];
 
-    const cal = calByRound[rr.round];
-    const flag = cal ? (COUNTRY_FLAGS[cal.country] ?? '🏁') : '🏁';
-    const shortName = cal?.country ?? `R${rr.round}`;
+    const myRaceEntry  = raceArr.find((e: any)  => e.driverSlug === slug);
+    const myQualiEntry = qualiArr.find((e: any) => e.driverSlug === slug);
 
-    const teammateResult = teammate
-      ? (rr.driverResults ?? []).find((d: any) => d.driverSlug === teammate.slug)
-      : null;
+    // Skip rounds with no data for this driver yet
+    if (!myRaceEntry && !myQualiEntry) continue;
 
-    // ── Qualifying ──────────────────────────────────────────────────────────
-    // Use stored qualifyingPosition if present; fall back to startPosition as proxy
-    const qPos: number = myResult.qualifyingPosition ?? myResult.startPosition ?? 20;
-    const qHasExactData = myResult.qualifyingPosition != null;
-    const qStage = deriveQStage(qPos);
-    const teammateQPos: number = teammateResult?.qualifyingPosition ?? teammateResult?.startPosition ?? 20;
-    const qBeatenTeammate = qPos < teammateQPos;
+    const flag      = COUNTRY_FLAGS[cal.country as string] ?? '🏁';
+    const shortName = (cal.country as string) ?? `R${cal.round}`;
 
-    let qPts: number | null = null;
-    if (rr.qualifyingScored || qHasExactData) {
-      qPts = calculateDriverQualifyingScore({
-        qualifyingPosition: qPos,
-        qualifyingRound: qStage,
-        beatenTeammate: qBeatenTeammate,
-        didNotQualify: false,
-        dsqFromQualifying: false,
-      });
+    // ── Qualifying ────────────────────────────────────────────────────────────
+    let qPts:   number | null = null;
+    let qStage: string | null = null;
+    let qPos:   number | null = null;
+
+    if (myQualiEntry && myDriverInfo) {
+      qPos   = myQualiEntry.position ?? null;
+      qStage = myQualiEntry.stage
+        ?? ((qPos ?? 99) <= 10 ? 'Q3' : (qPos ?? 99) <= 15 ? 'Q2' : 'Q1');
+
+      // Reconstruct full QualifyingDriverResult[] so teammate comparison scores correctly
+      const qualResults: QualifyingDriverResult[] = qualiArr
+        .filter((e: any) => slugToDriver.has(e.driverSlug))
+        .map((e: any) => {
+          const info = slugToDriver.get(e.driverSlug)!;
+          const pos  = e.position ?? 99;
+          return {
+            driverNumber:  info.driverNumber,
+            teamName:      info.teamName,
+            finalPosition: e.position ?? null,
+            reachedQ2:     pos <= 15,
+            reachedQ3:     pos <= 10,
+            setLapTime:    true,
+            status:        'Qualified' as const,
+          };
+        });
+
+      const myQualResult = qualResults.find(r => r.driverNumber === myDriverInfo.driverNumber);
+      if (myQualResult) {
+        qPts = calculateQualifyingDriverScore(myQualResult, qualResults).total;
+      }
     }
 
-    // ── DNF / not classified ─────────────────────────────────────────────────
-    if (myResult.notClassified || myResult.dnf) {
-      const rPts = myResult.notClassified ? -15 : 0;
-      rows.push({
-        round: rr.round, flag, shortName,
-        qPts, qStage, qPos, qApprox: !qHasExactData,
-        rPts, spPts: null, flBonus: 0, btBonus: 0, pgScore: 0,
-        total: (qPts ?? 0) + rPts, dnf: true,
-      });
-      continue;
+    // ── Sprint points (sprint weekends only) ──────────────────────────────────
+    let spPts: number | null = null;
+    const mySprintQuali = sprintQualiArr.find((e: any) => e.driverSlug === slug);
+    const mySprintRace  = sprintRaceArr.find((e: any)  => e.driverSlug === slug);
+    if (mySprintQuali || mySprintRace) {
+      spPts = (mySprintQuali?.points ?? 0) + (mySprintRace?.points ?? 0);
     }
 
-    // ── Race ─────────────────────────────────────────────────────────────────
-    const finish = myResult.finishPosition ?? 20;
-    const start  = myResult.startPosition  ?? 20;
-    const teammateFinish = teammateResult?.finishPosition ?? 20;
+    // ── Race ──────────────────────────────────────────────────────────────────
+    let rPts = 0, flBonus = 0, btBonus = 0, pgScore = 0, racePts = 0;
+    let dnf  = false;
 
-    const rPts    = (FINISH_POINTS[finish] ?? 0) + 1;
-    const flBonus = myResult.fastestLap ? 5 : 0;
-    const btBonus = finish < teammateFinish ? 3 : 0;
+    if (myRaceEntry && myDriverInfo) {
+      // Reconstruct full RaceDriverResult[] so teammate comparison scores correctly
+      const raceResults: RaceDriverResult[] = raceArr
+        .filter((e: any) => slugToDriver.has(e.driverSlug))
+        .map((e: any) => {
+          const info  = slugToDriver.get(e.driverSlug)!;
+          const isDnf = !!e.notClassified;
+          const isDsq = !!e.dsq;
+          return {
+            driverNumber:   info.driverNumber,
+            teamName:       info.teamName,
+            finishPosition: isDnf ? null : (e.position ?? null),
+            startPosition:  e.startPosition ?? e.position ?? 20,
+            status:         isDsq ? 'DSQ' : isDnf ? 'DNF' : 'Finished',
+            fastestLap:     !!e.fastestLap,
+          } as RaceDriverResult;
+        });
 
-    const delta = start - finish;
-    let pgScore = 0;
-    if (delta > 0) {
-      pgScore = Math.min(delta * 2, 10);
-    } else if (delta < 0) {
-      const lost = -delta;
-      pgScore = start <= 10 ? -Math.min(lost * 2, 10) : -Math.min(lost, 5);
+      const myRaceResult = raceResults.find(r => r.driverNumber === myDriverInfo.driverNumber);
+      if (myRaceResult) {
+        const score = calculateRaceDriverScore(myRaceResult, raceResults);
+        rPts    = score.positionBonus + score.finishedBonus + score.dsqPenalty;
+        flBonus = score.fastestLapBonus;
+        btBonus = score.teammateBeatBonus;
+        pgScore = score.positionsGainedBonus + score.positionsLostPenalty + score.top10BonusPenalty;
+        racePts = score.total;
+        dnf     = myRaceResult.status !== 'Finished';
+      }
     }
-
-    const total = (qPts ?? 0) + rPts + flBonus + btBonus + pgScore;
 
     rows.push({
-      round: rr.round, flag, shortName,
-      qPts, qStage, qPos, qApprox: !qHasExactData,
-      rPts, spPts: null, flBonus, btBonus, pgScore, total, dnf: false,
+      round: cal.round, flag, shortName,
+      qPts,
+      qStage,
+      qPos,
+      qApprox: false, // real qualifying data from RaceCalendar arrays — never approximate
+      rPts:    Math.round(rPts    * 100) / 100,
+      spPts,
+      flBonus: Math.round(flBonus * 100) / 100,
+      btBonus: Math.round(btBonus * 100) / 100,
+      pgScore: Math.round(pgScore * 100) / 100,
+      total:   Math.round(((qPts ?? 0) + racePts + (spPts ?? 0)) * 100) / 100,
+      dnf,
     });
   }
 
@@ -140,7 +175,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // Q stage counts
   const qCounts = { Q3: 0, Q2: 0, Q1: 0 };
-  for (const r of rows) if (r.qStage) qCounts[r.qStage as 'Q1'|'Q2'|'Q3']++;
+  for (const r of rows) {
+    if (r.qStage === 'Q3')      qCounts.Q3++;
+    else if (r.qStage === 'Q2') qCounts.Q2++;
+    else if (r.qStage === 'Q1') qCounts.Q1++;
+  }
 
   return NextResponse.json({ rows, totals, qCounts });
 }
