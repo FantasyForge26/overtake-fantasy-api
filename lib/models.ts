@@ -100,7 +100,6 @@ const LeagueSchema = new Schema({
   pauseEnd:         { type: String, default: '08:00' },
   createdAt:        { type: Date, default: Date.now },
   currentRaceIndex: { type: Number, default: 0 },
-  raceCalendar:     [{ type: String }],
 });
 
 // ---------------------------------------------------------------------------
