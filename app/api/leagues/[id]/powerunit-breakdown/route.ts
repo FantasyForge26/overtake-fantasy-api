@@ -78,7 +78,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? Math.round(carPositions.reduce((a, b) => a + b, 0) / carPositions.length)
       : 0;
 
-    const rPts = Math.round(myEntries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
+    // Per-session point buckets. Old-format entries (no session field) bucket
+    // into racePts so legacy data renders sanely.
+    const sumPts = (arr: any[]) =>
+      Math.round(arr.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
+
+    const sqPts   = sumPts(myEntries.filter((e: any) => e.session === 'sprintQuali'));
+    const srPts   = sumPts(myEntries.filter((e: any) => e.session === 'sprintRace'));
+    const qPts    = sumPts(myEntries.filter((e: any) => e.session === 'qualifying'));
+    const racePts = sumPts(myEntries.filter((e: any) => e.session === 'race' || e.session == null));
+
+    const rPts = Math.round((sqPts + srPts + qPts + racePts) * 100) / 100;
 
     rows.push({
       round:        cal.round,
@@ -87,14 +97,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       carCount:     carPositions.length,
       carPositions,
       avgPos,
+      sqPts,
+      srPts,
+      qPts,
+      racePts,
       rPts,
       tot:          rPts,
     });
   }
 
   const totals = rows.reduce(
-    (acc, r) => ({ rPts: acc.rPts + r.rPts, total: acc.total + r.tot }),
-    { rPts: 0, total: 0 },
+    (acc, r) => ({
+      sqPts:   acc.sqPts   + r.sqPts,
+      srPts:   acc.srPts   + r.srPts,
+      qPts:    acc.qPts    + r.qPts,
+      racePts: acc.racePts + r.racePts,
+      rPts:    acc.rPts    + r.rPts,
+      total:   acc.total   + r.tot,
+    }),
+    { sqPts: 0, srPts: 0, qPts: 0, racePts: 0, rPts: 0, total: 0 },
   );
 
   return NextResponse.json({ rows, totals, manufacturer });

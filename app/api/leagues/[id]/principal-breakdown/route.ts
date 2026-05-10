@@ -70,7 +70,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const d1Pos = d1Entry && !d1Entry.notClassified && !d1Entry.dsq ? (d1Entry.position ?? null) : null;
     const d2Pos = d2Entry && !d2Entry.notClassified && !d2Entry.dsq ? (d2Entry.position ?? null) : null;
 
-    const rPts = Math.round(myEntries.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
+    // Per-session point buckets. Old-format entries (no session field) bucket
+    // into racePts so legacy data renders sanely.
+    const sumPts = (arr: any[]) =>
+      Math.round(arr.reduce((s: number, e: any) => s + (e.points ?? 0), 0) * 100) / 100;
+
+    const sqPts   = sumPts(myEntries.filter((e: any) => e.session === 'sprintQuali'));
+    const srPts   = sumPts(myEntries.filter((e: any) => e.session === 'sprintRace'));
+    const qPts    = sumPts(myEntries.filter((e: any) => e.session === 'qualifying'));
+    const racePts = sumPts(myEntries.filter((e: any) => e.session === 'race' || e.session == null));
+
+    const rPts = Math.round((sqPts + srPts + qPts + racePts) * 100) / 100;
 
     rows.push({
       round:       cal.round,
@@ -80,14 +90,25 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       driver2Pos:  d2Pos,
       driver1Name: driver1 ? (nameMap[driver1.slug] ?? null) : null,
       driver2Name: driver2 ? (nameMap[driver2.slug] ?? null) : null,
+      sqPts,
+      srPts,
+      qPts,
+      racePts,
       rPts,
       tot:         rPts,
     });
   }
 
   const totals = rows.reduce(
-    (acc, r) => ({ rPts: acc.rPts + r.rPts, total: acc.total + r.tot }),
-    { rPts: 0, total: 0 },
+    (acc, r) => ({
+      sqPts:   acc.sqPts   + r.sqPts,
+      srPts:   acc.srPts   + r.srPts,
+      qPts:    acc.qPts    + r.qPts,
+      racePts: acc.racePts + r.racePts,
+      rPts:    acc.rPts    + r.rPts,
+      total:   acc.total   + r.tot,
+    }),
+    { sqPts: 0, srPts: 0, qPts: 0, racePts: 0, rPts: 0, total: 0 },
   );
 
   return NextResponse.json({ rows, totals });
