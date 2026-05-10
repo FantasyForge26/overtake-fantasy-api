@@ -565,6 +565,18 @@ const NotificationSchema = new Schema({
   read:      { type: Boolean, default: false },
   data:      { type: Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },
+  // Push delivery observability — populated by sendPushToUser/Users.
+  // Each pushTicket records what Expo's /push/send endpoint returned for one
+  // recipient token. status='ok' means Expo accepted the message and returned
+  // a ticket ID; 'error' means it was rejected (see expoErrorCode).
+  pushSentAt:    { type: Date },
+  pushTickets:   [{
+    token:          { type: String },
+    ticketId:       { type: String },
+    status:         { type: String, enum: ['ok', 'error'] },
+    expoErrorCode:  { type: String },
+    expoMessage:    { type: String },
+  }],
 });
 
 NotificationSchema.index({ userId: 1, createdAt: -1 });
