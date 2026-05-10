@@ -125,6 +125,11 @@ async function main() {
 
   let calUpdatedCount = 0;
 
+  // Track new entries across all rounds so the asset-totals printout works
+  // correctly in DRY_RUN (where DB never gets written).
+  const allNewPrincipalEntries: any[] = [];
+  const allNewPowerUnitEntries: any[] = [];
+
   for (const cal of processedCals) {
     const round: number   = cal.round;
     const isSprint: boolean = cal.isSprint ?? false;
@@ -257,6 +262,10 @@ async function main() {
       console.log(`    ${slug.padEnd(36)} total=${tot}`);
     }
 
+    // Accumulate for asset-totals computation (works in both dry-run and live)
+    allNewPrincipalEntries.push(...newPrincipalEntries);
+    allNewPowerUnitEntries.push(...newPowerUnitEntries);
+
     if (!DRY_RUN) {
       cal.principalResults  = newPrincipalEntries;
       cal.powerUnitResults  = newPowerUnitEntries;
@@ -269,21 +278,17 @@ async function main() {
 
   console.log('\n--- Recomputing Asset totals ---');
 
-  // Reload calendars to get saved data (or use in-memory for dry-run preview)
-  const calSource = DRY_RUN ? processedCals : (await RaceCalendar.find({ season: 2026 }).lean() as any[]);
-
+  // Sum from in-memory new entries — correct in both dry-run and live modes.
   const newTotals = new Map<string, number>();
 
-  for (const cal of calSource) {
-    for (const e of (cal.principalResults ?? [])) {
-      if (e.principalSlug) {
-        newTotals.set(e.principalSlug, r2((newTotals.get(e.principalSlug) ?? 0) + (e.points ?? 0)));
-      }
+  for (const e of allNewPrincipalEntries) {
+    if (e.principalSlug) {
+      newTotals.set(e.principalSlug, r2((newTotals.get(e.principalSlug) ?? 0) + (e.points ?? 0)));
     }
-    for (const e of (cal.powerUnitResults ?? [])) {
-      if (e.powerUnitSlug) {
-        newTotals.set(e.powerUnitSlug, r2((newTotals.get(e.powerUnitSlug) ?? 0) + (e.points ?? 0)));
-      }
+  }
+  for (const e of allNewPowerUnitEntries) {
+    if (e.powerUnitSlug) {
+      newTotals.set(e.powerUnitSlug, r2((newTotals.get(e.powerUnitSlug) ?? 0) + (e.points ?? 0)));
     }
   }
 
