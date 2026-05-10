@@ -41,6 +41,16 @@ async function main() {
   console.log('=== Push registration ===');
   console.log(`  Total registered tokens (all users): ${totalTokens}`);
   if (USER_ID) console.log(`  Tokens for USER_ID=${USER_ID}: ${userScopeTokens}`);
+
+  // Print all (userId, platform) pairs so the operator knows whose token is whose
+  const allTokens = await PushToken.find({}).select('userId platform updatedAt token').lean() as any[];
+  if (allTokens.length > 0) {
+    console.log('  Token roster:');
+    for (const t of allTokens) {
+      const tokenPreview = (t.token ?? '').slice(0, 30);
+      console.log(`    userId=${t.userId.toString()}  platform=${t.platform ?? '?'}  token=${tokenPreview}…`);
+    }
+  }
   console.log('');
 
   // Recent notifications
