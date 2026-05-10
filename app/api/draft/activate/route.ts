@@ -17,10 +17,19 @@ export async function POST(req: NextRequest) {
 
   await connectDB();
 
-  const draftSession = await DraftSession.findOne({ leagueId, status: 'pending' });
-  if (!draftSession) {
-    return NextResponse.json({ error: 'No pending draft session found' }, { status: 404 });
+  // Idempotency: if the draft is already active (cron beat us, or another
+  // client called this endpoint first), treat it as success and return the
+  // current session.
+  const existing = await DraftSession.findOne({ leagueId, status: { $in: ['pending', 'active'] } });
+  if (!existing) {
+    return NextResponse.json({ error: 'No pending or active draft session found' }, { status: 404 });
   }
+
+  if (existing.status === 'active') {
+    return NextResponse.json(existing);
+  }
+
+  const draftSession = existing;
 
   if (!draftSession.preDraftStartedAt) {
     draftSession.preDraftStartedAt = new Date();
