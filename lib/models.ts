@@ -43,6 +43,19 @@ const AssetSchema = new Schema({
   avgPitStopTime:     { type: Number },
   age:                { type: Number },
   teamStrength:       { type: Number, default: 50 },
+  // Per-asset boost capacity for the season.
+  //
+  // BOOST COUNTER RULE (Rule 3, adopted):
+  //   - Each driver/pitCrew asset starts each season with 12 boost slots.
+  //   - Each actual race weekend (cancelled races excluded), the asset's slot
+  //     count decreases by 1 IF the asset is selected as a boost in that round
+  //     by any roster.
+  //   - Cancelled races do NOT consume slots.
+  //   - In normal seasons (no cancellations), this is identical to Rule 2
+  //     (1 slot per scheduled round).
+  //
+  // See scripts/correct-boost-counters-rule3.ts for the 2026 one-off correction
+  // applied after the Miami init bug.
   boostsRemaining:    { type: Number, default: 12 },
 });
 
@@ -378,6 +391,7 @@ const RaceCalendarSchema = new Schema({
   miamiBoostBackfilled:      { type: Boolean, default: false },
   miamiSelectionsBackfilled: { type: Boolean, default: false },
   r1r3ResultsBackfilled:     { type: Boolean, default: false },
+  seasonBoostInitCorrected:  { type: Boolean, default: false },
   // Main race + non-driver results (written by processRace after race weekend)
   processedAt:       { type: Date },
   raceResults: [{
