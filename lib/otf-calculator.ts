@@ -377,15 +377,21 @@ export interface AssetForOTFv2 {
 }
 
 // Weights per asset type. Each row sums to 1.0.
-// pitCrew has CONS dropped to 0.05 — their per-race points are derived from
-// stop-time ranks across the field, which swing widely race-to-race for
-// non-skill reasons (some races have unusual stop counts, weather, etc.).
-// CONS would punish them for normal noise. Freed weight goes to PERF.
+//
+// Tuned 2026-05-10 (v2.1) so OTF tracks current-season avg pts/race monotonically
+// — fixes auto-draft balance issue where rookies/young drivers ranked below
+// veterans despite higher current avg (HIST + BASE were dominating). PERF now
+// carries the majority weight in all asset types; HIST and BASE only serve as
+// small tiebreakers when current performance is essentially tied.
+//
+// pitCrew/powerUnit have CONS dropped to 0 — their per-race points are derived
+// from per-race ranks which swing widely for non-skill reasons (different stop
+// counts, etc.). CONS would punish them for normal noise.
 const OTF_V2_WEIGHTS: Record<string, OtfComponents> = {
-  driver:    { perf: 0.35, form: 0.25, cons: 0.15, hist: 0.15, base: 0.10 },
-  principal: { perf: 0.35, form: 0.25, cons: 0.15, hist: 0.15, base: 0.10 },
-  pitCrew:   { perf: 0.45, form: 0.25, cons: 0.05, hist: 0.15, base: 0.10 },
-  powerUnit: { perf: 0.40, form: 0.20, cons: 0.15, hist: 0.15, base: 0.10 },
+  driver:    { perf: 0.60, form: 0.25, cons: 0.05, hist: 0.07, base: 0.03 },
+  principal: { perf: 0.60, form: 0.25, cons: 0.05, hist: 0.07, base: 0.03 },
+  pitCrew:   { perf: 0.65, form: 0.25, cons: 0.00, hist: 0.07, base: 0.03 },
+  powerUnit: { perf: 0.65, form: 0.25, cons: 0.00, hist: 0.07, base: 0.03 },
 };
 
 /** Mean fantasy points per race → curved performance score (0-100). */
