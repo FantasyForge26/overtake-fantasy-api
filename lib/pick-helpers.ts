@@ -61,6 +61,38 @@ export function neededAssetTypes(roster: any): string[] {
 }
 
 /**
+ * Per-asset-type draft priority. Higher = picked first when slots are open
+ * across multiple types. Reflects approximate per-race fantasy points
+ * contribution — drivers score ~50/race, principals ~25-30, pit crews ~15-20,
+ * power units ~10-15. The OTF score is normalised to 0-100 across all types
+ * for visual comparison, but in raw points terms a 75-rated driver is worth
+ * far more than a 75-rated PU. Tier-then-OTF prevents auto-draft from
+ * "wasting" early picks on a high-rated low-tier asset when stronger drivers
+ * are still on the board.
+ */
+export const ASSET_TYPE_DRAFT_TIER: Record<string, number> = {
+  driver:    4,
+  principal: 3,
+  pitCrew:   2,
+  powerUnit: 1,
+};
+
+/**
+ * Sorts a list of asset candidates by (tier desc, otfRating desc) and returns
+ * the best pick. Used by auto-pick handlers as the FALLBACK selection logic
+ * when the user's queue doesn't have an applicable pick.
+ */
+export function sortCandidatesForAutoDraft<T extends { assetType: string; otfRating?: number }>(
+  candidates: T[],
+): T[] {
+  return [...candidates].sort((a, b) => {
+    const tierDiff = (ASSET_TYPE_DRAFT_TIER[b.assetType] ?? 0) - (ASSET_TYPE_DRAFT_TIER[a.assetType] ?? 0);
+    if (tierDiff !== 0) return tierDiff;
+    return (b.otfRating ?? 0) - (a.otfRating ?? 0);
+  });
+}
+
+/**
  * Atomically claims an asset from the draft session in a single MongoDB operation.
  *
  * The filter requires ALL of:

@@ -4,7 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes, sortCandidatesForAutoDraft } from '@/lib/pick-helpers';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -56,12 +56,13 @@ export async function POST(req: NextRequest) {
     if (queued) bestAsset = queued;
   }
 
-  // Fall back to highest OTF rating across ALL needed slot types
+  // Fall back to highest-tier asset, then highest OTF within the tier
   if (!bestAsset) {
-    bestAsset = await Asset
-      .findOne({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
-      .sort({ otfRating: -1 })
-      .select('_id assetType');
+    const candidates = await Asset
+      .find({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
+      .select('_id assetType otfRating')
+      .lean();
+    bestAsset = sortCandidatesForAutoDraft(candidates as any[])[0] ?? null;
   }
 
   if (!bestAsset) {

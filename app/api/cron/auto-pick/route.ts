@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes, sortCandidatesForAutoDraft } from '@/lib/pick-helpers';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -92,12 +92,16 @@ export async function GET(req: NextRequest) {
       if (queued) bestAsset = queued;
     }
 
-    // Fall back to the highest OTF asset across ALL needed slot types
+    // Fall back to highest-tier asset, then highest OTF within the tier.
+    // Driver > Principal > PitCrew > PowerUnit reflects raw fantasy points per
+    // race — prevents auto-draft from "wasting" early picks on a high-rated
+    // low-tier asset when stronger drivers are still on the board.
     if (!bestAsset) {
-      bestAsset = await Asset
-        .findOne({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
-        .sort({ otfRating: -1 })
-        .select('_id assetType');
+      const candidates = await Asset
+        .find({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
+        .select('_id assetType otfRating')
+        .lean();
+      bestAsset = sortCandidatesForAutoDraft(candidates as any[])[0] ?? null;
     }
 
     if (!bestAsset) continue;
