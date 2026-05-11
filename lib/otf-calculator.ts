@@ -281,8 +281,12 @@ function performanceScore(
   avgPointsPerRace: number,
   assetType: 'driver' | 'principal' | 'pitCrew' | 'powerUnit',
 ): number {
+  // Tightened driver curve 2026-05-10: ceiling reachable at avg ≥ 60 pts/race
+  // (down from 75). Realistic single-race max is ~70 with all bonuses, so 75
+  // avg required no real driver to ever hit ceiling. 60 avg = consistent
+  // poles + wins, which is what we actually want to recognise.
   const anchors: Record<string, [number, number][]> = {
-    driver:    [[0, 30], [10, 50], [20, 65], [30, 78], [40, 86], [50, 92], [60, 96], [75, 99]],
+    driver:    [[0, 30], [10, 50], [20, 65], [30, 78], [40, 88], [50, 95], [60, 99]],
     principal: [[0, 30], [10, 50], [25, 70], [40, 80], [55, 85]],
     pitCrew:   [[0, 30], [10, 50], [25, 70], [35, 80], [45, 83]],
     powerUnit: [[0, 30], [5, 50], [10, 65], [15, 72], [20, 75]],
@@ -367,13 +371,30 @@ export function calculateOTFRating(asset: AssetForOTF): number {
     wPerf = 0.92; wHist = 0.06; wBase = 0.02;
   }
 
-  let rating: number;
+  // Sparse-history correction: a rookie's 1 partial historical season is
+  // noisy data that shouldn't drag down a current-season hot streak. Count
+  // how many seasons have meaningful sample size (≥5 races), then scale
+  // wHist down accordingly and give the freed weight to current perf.
+  const usableHistCount = pastSeasons.filter(s => s.racesCompleted >= 5).length;
+  let effectiveWHist = wHist;
+  if (historicalScore === null || usableHistCount === 0) {
+    // No usable history at all — redirect hist weight to current perf
+    // (was: redirected to base, which penalised over-performing rookies).
+    wPerf += wHist;
+    effectiveWHist = 0;
+  } else if (usableHistCount === 1) {
+    // Only 1 usable hist season — reduce hist weight to 25% of normal,
+    // give the freed 75% to perf so a hot rookie can climb.
+    const cut = wHist * 0.75;
+    wPerf += cut;
+    effectiveWHist = wHist - cut;
+  }
 
-  if (historicalScore !== null) {
-    rating = wPerf * perfScore + wHist * historicalScore + wBase * baseScore;
+  let rating: number;
+  if (effectiveWHist > 0 && historicalScore !== null) {
+    rating = wPerf * perfScore + effectiveWHist * historicalScore + wBase * baseScore;
   } else {
-    // No historical data — redistribute hist weight into base
-    rating = wPerf * perfScore + (wHist + wBase) * baseScore;
+    rating = wPerf * perfScore + wBase * baseScore;
   }
 
   return Math.round(Math.min(rating, ceiling));
