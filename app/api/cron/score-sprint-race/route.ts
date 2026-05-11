@@ -324,6 +324,18 @@ export async function GET(req: NextRequest) {
   const mergedPrincipalResults = [...existingPrincipalResults, ...newPrincipalEntries];
   const mergedPuResults        = [...existingPuResults, ...newPuEntries];
 
+  // ── 12b. Persist driver session points to Asset.totalPoints ────────────────
+  // Live crons must write Asset.totalPoints (process-race-logic skips this
+  // session when sprintRaceScored=true). Idempotency: cron returns early if
+  // already scored, so $inc only runs once per round.
+  if (!dryRun) {
+    for (const [slug, pts] of pointsBySlug) {
+      if (pts !== 0) {
+        await Asset.updateOne({ slug, season: 2026 }, { $inc: { totalPoints: pts } });
+      }
+    }
+  }
+
   // ── 13. Score all active league rosters ───────────────────────────────────
   const leagues = await League.find({ status: 'active' }).lean() as any[];
   const teamUpdateLog: { rosterId: string; leagueId: string; pointsAdded: number; boostedSlugs: string[] }[] = [];
