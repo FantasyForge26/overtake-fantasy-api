@@ -6,7 +6,7 @@ import { Roster, User } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
-const ASSET_SELECT = 'name assetType totalPoints avgPointsPerRace otfRating teamColor carNumber team manufacturer';
+const ASSET_SELECT = 'name assetType totalPoints avgPointsPerRace otfRating otfComponents teamColor carNumber team manufacturer';
 
 function pickAssetFields(asset: any) {
   if (!asset) return null;
@@ -15,6 +15,7 @@ function pickAssetFields(asset: any) {
     totalPoints:      asset.totalPoints ?? 0,
     avgPointsPerRace: asset.avgPointsPerRace ?? 0,
     otfRating:        asset.otfRating ?? 50,
+    otfComponents:    asset.otfComponents ?? null,
     teamColor:        asset.teamColor ?? '#FFFFFF',
     team:             asset.team ?? null,
     ...(asset.manufacturer != null ? { manufacturer: asset.manufacturer } : {}),

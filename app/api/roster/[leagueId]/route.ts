@@ -6,7 +6,7 @@ import { Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
 
-const ASSET_FIELDS = 'name team teamColor teamColorSecondary assetType carNumber nationality slug illustrationUrl otfRating totalPoints avgPointsPerRace racesCompleted dnfCount podiums wins fastestStopCount avgPitStopTime avgFinishPosition age debutYear teammateName qualifyingRaces q2Count q3Count';
+const ASSET_FIELDS = 'name team teamColor teamColorSecondary assetType carNumber nationality slug illustrationUrl otfRating otfComponents totalPoints avgPointsPerRace racesCompleted dnfCount podiums wins fastestStopCount avgPitStopTime avgFinishPosition age debutYear teammateName qualifyingRaces q2Count q3Count';
 
 export async function GET(
   req: NextRequest,
