@@ -336,6 +336,186 @@ function calculateHistoricalWeightedScore(
   return weightedSum / totalWeight;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// OTF v2 — component-based rating
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Each rating is a weighted composite of sub-scores (0-100 each). The
+// components are surfaced individually so users can drill down ("why is
+// Norris 84?") — and so a paid tier can paywall the breakdown.
+//
+// Components:
+//   PERF  — mean fantasy pts/race this season
+//   FORM  — recent races, exponential decay (most recent weighted highest)
+//   CONS  — consistency: lower stdev/|mean| ratio = higher
+//   HIST  — weighted historical seasons (sparse-history correction)
+//   BASE  — preseason expert rating (decays as season progresses)
+//
+// All four asset types share the same component set and scale 0-100. Weights
+// vary slightly per type.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface OtfComponents {
+  perf: number;
+  form: number;
+  cons: number;
+  hist: number;
+  base: number;
+}
+
+export interface PerRaceRowForOTF {
+  round: number;
+  total: number;          // total fantasy points earned by this asset in this round
+  dnf?:    boolean;
+}
+
+export interface AssetForOTFv2 {
+  assetType:         'driver' | 'principal' | 'pitCrew' | 'powerUnit';
+  otfBaseRating:     number;
+  perRaceRows:       PerRaceRowForOTF[];   // empty array if no data yet
+  historicalSeasons: HistoricalSeasonForOTF[];
+}
+
+// Weights per asset type. Each row sums to 1.0.
+// pitCrew has CONS dropped to 0.05 — their per-race points are derived from
+// stop-time ranks across the field, which swing widely race-to-race for
+// non-skill reasons (some races have unusual stop counts, weather, etc.).
+// CONS would punish them for normal noise. Freed weight goes to PERF.
+const OTF_V2_WEIGHTS: Record<string, OtfComponents> = {
+  driver:    { perf: 0.35, form: 0.25, cons: 0.15, hist: 0.15, base: 0.10 },
+  principal: { perf: 0.35, form: 0.25, cons: 0.15, hist: 0.15, base: 0.10 },
+  pitCrew:   { perf: 0.45, form: 0.25, cons: 0.05, hist: 0.15, base: 0.10 },
+  powerUnit: { perf: 0.40, form: 0.20, cons: 0.15, hist: 0.15, base: 0.10 },
+};
+
+/** Mean fantasy points per race → curved performance score (0-100). */
+function v2_perfScore(rows: PerRaceRowForOTF[], type: string): number {
+  if (rows.length === 0) return 50; // neutral default — no current data yet
+  const avg = rows.reduce((s, r) => s + r.total, 0) / rows.length;
+  return performanceScore(avg, type as 'driver' | 'principal' | 'pitCrew' | 'powerUnit');
+}
+
+/**
+ * Exponential decay over recent races: most recent ×1.0, then ×0.7, ×0.5,
+ * ×0.35, ×0.25, ×0.18, ×0.12, ×0.08. Past 8 races essentially ignored —
+ * captures form, not season totals.
+ */
+function v2_formScore(rows: PerRaceRowForOTF[], type: string): number {
+  if (rows.length === 0) return 50;
+  const weights = [1.0, 0.7, 0.5, 0.35, 0.25, 0.18, 0.12, 0.08];
+  const sorted = [...rows].sort((a, b) => b.round - a.round); // most recent first
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (let i = 0; i < sorted.length && i < weights.length; i++) {
+    weightedSum += sorted[i].total * weights[i];
+    weightTotal += weights[i];
+  }
+  if (weightTotal === 0) return 50;
+  const weightedAvg = weightedSum / weightTotal;
+  return performanceScore(weightedAvg, type as 'driver' | 'principal' | 'pitCrew' | 'powerUnit');
+}
+
+/**
+ * Consistency — coefficient of variation (stdev / |mean|). 0 = perfectly
+ * consistent (100), 1.0 = wild swings (0). Single data point gets neutral 70.
+ */
+function v2_consScore(rows: PerRaceRowForOTF[]): number {
+  if (rows.length < 2) return 70;
+  const vals = rows.map(r => r.total);
+  const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+  if (mean === 0) return 50;
+  const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+  const stdev = Math.sqrt(variance);
+  const cv = stdev / Math.abs(mean);
+  return Math.max(0, Math.min(100, 100 - cv * 100));
+}
+
+/**
+ * Historical score with sparse-history correction:
+ *   - 0 usable hist seasons (≥5 races each): return null (caller redistributes weight)
+ *   - 1 usable hist season: cap contribution at 25% of normal weight
+ *   - 2+ usable: full weighted average
+ */
+function v2_histScore(
+  historicalSeasons: HistoricalSeasonForOTF[],
+  type: string,
+): { score: number; reliability: 'none' | 'sparse' | 'full' } {
+  const usable = historicalSeasons.filter(s => s.season < 2026 && s.racesCompleted >= 5);
+  if (usable.length === 0) return { score: 50, reliability: 'none' };
+  const score = calculateHistoricalWeightedScore(usable, type) ?? 50;
+  return { score, reliability: usable.length === 1 ? 'sparse' : 'full' };
+}
+
+/**
+ * Computes all v2 components and the weighted composite rating.
+ * Returns components AND the final rating so the caller can persist both.
+ */
+export function calculateOTFv2(input: AssetForOTFv2): { rating: number; components: OtfComponents } {
+  const { assetType, otfBaseRating, perRaceRows, historicalSeasons } = input;
+  const baseWeights = OTF_V2_WEIGHTS[assetType] ?? OTF_V2_WEIGHTS.driver;
+
+  // Compute each component
+  const perf = v2_perfScore(perRaceRows, assetType);
+  const form = v2_formScore(perRaceRows, assetType);
+  const cons = v2_consScore(perRaceRows);
+  const { score: hist, reliability } = v2_histScore(historicalSeasons, assetType);
+  const base = otfBaseRating;
+
+  // Adjust weights based on hist reliability and race count
+  let { perf: wP, form: wF, cons: wC, hist: wH, base: wB } = baseWeights;
+
+  const races = perRaceRows.length;
+
+  // Pre-season: no race data → boost base, drop perf/form/cons to 0
+  if (races === 0) {
+    const sum = wP + wF + wC;
+    wB += sum;  // everything that depended on race data goes to base
+    wP = wF = wC = 0;
+  } else if (races < 3) {
+    // Very early season: dampen form (single race is too noisy), boost base
+    const cut = wF * 0.5;
+    wB += cut;
+    wF -= cut;
+  }
+
+  // Sparse history → reduce hist weight, push freed weight to PERF/FORM
+  // (60/40 split). Reasoning: when history is unreliable, current performance
+  // is a more trustworthy signal than the preseason base rating. Pushing to
+  // base used to anchor rookies below their actual current-season form.
+  if (reliability === 'none') {
+    wP += wH * 0.60;
+    wF += wH * 0.40;
+    wH = 0;
+  } else if (reliability === 'sparse') {
+    const cut = wH * 0.70;
+    wP += cut * 0.60;
+    wF += cut * 0.40;
+    wH -= cut;
+  }
+
+  // Build component object (always 5 values, regardless of weights)
+  const components: OtfComponents = {
+    perf: Math.round(perf),
+    form: Math.round(form),
+    cons: Math.round(cons),
+    hist: Math.round(hist),
+    base: Math.round(base),
+  };
+
+  // Composite — use the adjusted weights against the RAW (not rounded) component values
+  const ratingRaw =
+    wP * perf +
+    wF * form +
+    wC * cons +
+    wH * hist +
+    wB * base;
+
+  // Cap at 100 (was per-type ceilings in v1; v2 is unified)
+  const rating = Math.round(Math.max(0, Math.min(100, ratingRaw)));
+
+  return { rating, components };
+}
+
 export function calculateOTFRating(asset: AssetForOTF): number {
   const assetType = (asset.assetType ?? 'driver') as 'driver' | 'principal' | 'pitCrew' | 'powerUnit';
   const ceiling   = OTF_CEILING[assetType] ?? 99;

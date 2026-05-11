@@ -30,6 +30,20 @@ const AssetSchema = new Schema({
   illustrationUrl:    { type: String },
   otfRating:          { type: Number, default: 50 },
   otfBaseRating:      { type: Number, default: 50 },
+  // v2 component breakdown — populated by calculateOTFv2. Each is 0-100.
+  // PERF = mean fantasy pts/race this season → curved performance score
+  // FORM = recent races exponential decay (last 8 races, most recent weighted highest)
+  // CONS = consistency (lower stdev/|mean| = higher score)
+  // HIST = weighted historical seasons with sparse-history correction
+  // BASE = preseason expert rating (decays as the season progresses)
+  // Composite otfRating = weighted sum of these — see lib/otf-calculator.ts
+  otfComponents: {
+    perf: { type: Number, default: 50 },
+    form: { type: Number, default: 50 },
+    cons: { type: Number, default: 50 },
+    hist: { type: Number, default: 50 },
+    base: { type: Number, default: 50 },
+  },
   totalPoints:        { type: Number, default: 0 },
   avgPointsPerRace:   { type: Number, default: 0 },
   racesCompleted:     { type: Number, default: 0 },
