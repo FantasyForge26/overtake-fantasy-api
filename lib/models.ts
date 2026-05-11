@@ -649,6 +649,39 @@ const ScoringLogSchema = new Schema({
 ScoringLogSchema.index({ season: 1, round: 1, event: 1 });
 
 // ---------------------------------------------------------------------------
+// Trade — between-manager asset trades within a league
+// ---------------------------------------------------------------------------
+
+const TradeAssetSchema = new Schema({
+  assetId:   { type: Schema.Types.ObjectId, ref: 'Asset', required: true },
+  slug:      { type: String, required: true },
+  name:      { type: String },
+  assetType: { type: String, enum: ['driver', 'principal', 'pitCrew', 'powerUnit'], required: true },
+  otfRating: { type: Number, required: true },
+}, { _id: false });
+
+const TradeSchema = new Schema({
+  leagueId:        { type: Schema.Types.ObjectId, ref: 'League', required: true },
+  season:          { type: Number, default: 2026 },
+  proposerUserId:  { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  counterpartyUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  // Assets the proposer is sending to the counterparty
+  fromAssets:      { type: [TradeAssetSchema], required: true },
+  // Assets the counterparty is sending to the proposer (in return)
+  toAssets:        { type: [TradeAssetSchema], required: true },
+  fromOtfTotal:    { type: Number, required: true },
+  toOtfTotal:      { type: Number, required: true },
+  status:          { type: String, enum: ['pending', 'accepted', 'declined', 'cancelled', 'expired'], default: 'pending' },
+  message:         { type: String },
+  proposedAt:      { type: Date, default: Date.now },
+  respondedAt:     { type: Date },
+});
+
+TradeSchema.index({ leagueId: 1, status: 1, proposedAt: -1 });
+TradeSchema.index({ counterpartyUserId: 1, status: 1 });
+TradeSchema.index({ proposerUserId: 1, status: 1 });
+
+// ---------------------------------------------------------------------------
 // ProcessedRace — idempotency log for admin/process-race
 // ---------------------------------------------------------------------------
 
@@ -684,3 +717,4 @@ export const Notification             = mongoose.models.Notification            
 export const NewsSummary              = mongoose.models.NewsSummary              || mongoose.model('NewsSummary',              NewsSummarySchema);
 export const WaiverBid                = mongoose.models.WaiverBid                || mongoose.model('WaiverBid',                WaiverBidSchema);
 export const ProcessedRace            = mongoose.models.ProcessedRace            || mongoose.model('ProcessedRace',            ProcessedRaceSchema);
+export const Trade                    = mongoose.models.Trade                    || mongoose.model('Trade',                    TradeSchema);
