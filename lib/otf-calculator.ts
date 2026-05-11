@@ -346,19 +346,25 @@ export function calculateOTFRating(asset: AssetForOTF): number {
   const perfScore = performanceScore(asset.avgPointsPerRace, assetType);
   const baseScore = asset.otfBaseRating; // already 0-100, do not re-curve
 
-  // Weights by race count: [wPerf, wHist, wBase]
+  // Weights by race count: [wPerf, wHist, wBase].
+  //
+  // Tuned 2026-05-10 to bias more aggressively toward current-season
+  // performance so auto-draft picks the asset who's actually scoring now,
+  // not the one with the best preseason guess. Pre-season tier (0 races)
+  // still leans on baseRating since there's no data yet, but it nudges
+  // historical up slightly to break ties between same-base assets.
   let wPerf: number, wHist: number, wBase: number;
 
   if (races === 0) {
-    wPerf = 0.00; wHist = 0.25; wBase = 0.75;
+    wPerf = 0.00; wHist = 0.30; wBase = 0.70;
   } else if (races <= 2) {
-    wPerf = 0.25; wHist = 0.25; wBase = 0.50;
+    wPerf = 0.50; wHist = 0.25; wBase = 0.25;
   } else if (races <= 5) {
-    wPerf = 0.65; wHist = 0.20; wBase = 0.15;
+    wPerf = 0.75; wHist = 0.20; wBase = 0.05;
   } else if (races <= 15) {
-    wPerf = 0.75; wHist = 0.15; wBase = 0.10;
+    wPerf = 0.85; wHist = 0.12; wBase = 0.03;
   } else {
-    wPerf = 0.85; wHist = 0.10; wBase = 0.05;
+    wPerf = 0.92; wHist = 0.06; wBase = 0.02;
   }
 
   let rating: number;
