@@ -8,6 +8,7 @@ import { Asset, League, Roster, HistoricalSeason, ProcessedRace, RaceCalendar } 
 import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
+import { recalculateAllOTFv2 } from '@/lib/otf-recalculate';
 import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
 import { calculatePrincipalSessionScore, SessionType as PrincipalSessionType } from '@/lib/scoring/principal-session';
 import { calculatePowerUnitSessionScores, CarSessionData as PuCarSessionData } from '@/lib/scoring/powerunit-session';
@@ -39,6 +40,7 @@ export interface ProcessRaceResult {
   assetsUpdated: number;
   rostersUpdated: number;
   leagues:       { leagueId: string; rostersScored: number }[];
+  otfRecalc:     { total: number; updated: number; movers: number } | null;
 }
 
 /**
@@ -442,6 +444,19 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     );
   }
 
+  // ── 11. Recalculate OTF v2 across all 2026 assets ──────────────────────────
+  // The per-asset v1 update above only knew avgPointsPerRace. v2 needs the
+  // full per-race row context (FORM decay, CONS variance, sparse-history
+  // correction, etc.) and is cheap enough to run in full after each race.
+  let otfRecalcSummary: { total: number; updated: number; movers: number } | null = null;
+  try {
+    const r = await recalculateAllOTFv2(2026);
+    otfRecalcSummary = { total: r.total, updated: r.updated, movers: r.movers.length };
+    console.log(`[process-race] OTFv2 recalc: ${r.updated}/${r.total} updated, ${r.movers.length} big movers (Δ≥3)`);
+  } catch (err) {
+    console.error('[process-race] OTFv2 recalc failed (non-fatal):', err);
+  }
+
   return {
     success:        true,
     raceName:       scores.raceName,
@@ -450,5 +465,6 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     assetsUpdated:  assetUpdates.length,
     rostersUpdated,
     leagues:        leagueSummaries,
+    otfRecalc:      otfRecalcSummary,
   };
 }
