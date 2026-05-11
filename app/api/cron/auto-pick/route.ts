@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes } from '@/lib/pick-helpers';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -72,6 +72,11 @@ export async function GET(req: NextRequest) {
 
     const availableIds = freshSession.availableAssetIds.map((id: any) => id.toString());
 
+    // All asset types the roster still needs — drives a multi-type query so
+    // auto-draft picks the highest OTF asset across ALL open slots, not just
+    // the single neededType slot.
+    const openTypes = neededAssetTypes(roster);
+
     // Check queue first — pick the first queued asset whose type fills an open slot
     const draftQueue = await DraftQueue.findOne({ leagueId, userId });
     const queuedIds = draftQueue?.queue?.map((id: any) => id.toString()) ?? [];
@@ -81,16 +86,16 @@ export async function GET(req: NextRequest) {
     if (queuedPickId) {
       const queued = await Asset.findOne({
         _id: queuedPickId,
-        assetType: neededType,
+        assetType: { $in: openTypes },
         isActive: true,
       }).select('_id assetType');
       if (queued) bestAsset = queued;
     }
 
-    // Fall back to the highest OTF asset for the needed slot type
+    // Fall back to the highest OTF asset across ALL needed slot types
     if (!bestAsset) {
       bestAsset = await Asset
-        .findOne({ _id: { $in: availableIds }, assetType: neededType, isActive: true })
+        .findOne({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
         .sort({ otfRating: -1 })
         .select('_id assetType');
     }

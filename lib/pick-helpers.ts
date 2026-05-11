@@ -31,8 +31,12 @@ export function nextNeededAssetType(
 
   if (needed.length === 0) return null;
 
+  // Late-round rare-type override: only kick in once picks are STRICTLY fewer
+  // than open slots (an impossible state in a balanced snake draft, so this is
+  // effectively a safety net for hand-edited rosters). Previously this used <=
+  // and triggered on round 1 of every fresh roster because picks === slots.
   const picksRemaining = totalRounds - currentRound + 1;
-  if (picksRemaining <= needed.length) {
+  if (picksRemaining < needed.length) {
     const priority = ['powerUnit', 'principal', 'pitCrew', 'driver'];
     for (const type of priority) {
       if (needed.includes(type)) return type;
@@ -40,6 +44,20 @@ export function nextNeededAssetType(
   }
 
   return needed[0];
+}
+
+/**
+ * Returns the unique set of asset types the roster still needs. Used by the
+ * auto-pick code paths to query "highest OTF across all open slot types"
+ * instead of being locked into one type at a time.
+ */
+export function neededAssetTypes(roster: any): string[] {
+  const needed = new Set<string>();
+  if (!roster.driver1AssetId   || !roster.driver2AssetId)   needed.add('driver');
+  if (!roster.principalAssetId)                              needed.add('principal');
+  if (!roster.pitCrew1AssetId  || !roster.pitCrew2AssetId)  needed.add('pitCrew');
+  if (!roster.powerUnitAssetId)                              needed.add('powerUnit');
+  return Array.from(needed);
 }
 
 /**

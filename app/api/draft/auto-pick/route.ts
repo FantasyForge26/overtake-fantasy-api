@@ -4,7 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes } from '@/lib/pick-helpers';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -40,33 +40,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
   }
 
-  const assetType = nextNeededAssetType(roster, draftSession.currentRound, draftSession.totalRounds);
-  if (!assetType) return NextResponse.json({ error: 'Roster is already full' }, { status: 400 });
+  const openTypes = neededAssetTypes(roster);
+  if (openTypes.length === 0) return NextResponse.json({ error: 'Roster is already full' }, { status: 400 });
 
   const availableIds = draftSession.availableAssetIds.map((id: any) => id.toString());
 
-  // Check queue first — use the first queued asset that is available and matches the needed slot
+  // Check queue first — use the first queued asset that is available and matches an open slot
   const draftQueue = await DraftQueue.findOne({ leagueId, userId });
   const queuedIds = draftQueue?.queue?.map((id: any) => id.toString()) ?? [];
   const queuedPickId = queuedIds.find((qid: string) => availableIds.includes(qid));
 
   let bestAsset: any = null;
   if (queuedPickId) {
-    const queued = await Asset.findOne({ _id: queuedPickId, assetType, isActive: true }).select('_id assetType');
+    const queued = await Asset.findOne({ _id: queuedPickId, assetType: { $in: openTypes }, isActive: true }).select('_id assetType');
     if (queued) bestAsset = queued;
   }
 
-  // Fall back to highest OTF rating
+  // Fall back to highest OTF rating across ALL needed slot types
   if (!bestAsset) {
     bestAsset = await Asset
-      .findOne({ _id: { $in: availableIds }, assetType, isActive: true })
+      .findOne({ _id: { $in: availableIds }, assetType: { $in: openTypes }, isActive: true })
       .sort({ otfRating: -1 })
       .select('_id assetType');
   }
 
   if (!bestAsset) {
-    return NextResponse.json({ error: `No available ${assetType} asset found` }, { status: 400 });
+    return NextResponse.json({ error: `No available asset found for open slots: ${openTypes.join(', ')}` }, { status: 400 });
   }
+
+  const assetType = bestAsset.assetType as string;
 
   const pickIndex = draftSession.currentPickIndex;
   const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
