@@ -156,6 +156,11 @@ const RosterSchema = new Schema({
   totalPoints:        { type: Number, default: 0 },
   seasonRank:         { type: Number, default: 0 },
   ccBalance:          { type: Number, default: 0 },
+  // Per-league chat notification preference:
+  //   'all'      — push for every new chat message
+  //   'mentions' — push only when @-mentioned by display name (default)
+  //   'off'      — never send chat pushes for this league
+  chatNotifications:  { type: String, enum: ['all', 'mentions', 'off'], default: 'mentions' },
   updatedAt:          { type: Date, default: Date.now },
 });
 

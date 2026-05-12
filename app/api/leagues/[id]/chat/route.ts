@@ -3,8 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
-import { ChatMessage } from '@/lib/models';
+import { ChatMessage, Roster, User, League } from '@/lib/models';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
+import { sendPushToUser } from '@/lib/push';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -91,7 +92,87 @@ export async function POST(req: NextRequest, { params }: Params) {
     reactions: {},
   });
 
+  // Fire-and-forget push notifications to other league members based on their
+  // chatNotifications preference. Mentioned users get the push even if their
+  // preference is 'mentions' only.
+  notifyLeagueChat(leagueId, userId, userName, message ?? '', type, gifUrl).catch(err =>
+    console.error('[chat] notification dispatch failed:', err),
+  );
+
   return NextResponse.json(serializeMessage(doc), { status: 201 });
+}
+
+async function notifyLeagueChat(
+  leagueId: string,
+  senderUserId: string,
+  senderName: string,
+  message: string,
+  type: string,
+  gifUrl?: string,
+) {
+  // Load all rosters in this league with their chatNotifications preference
+  const rosters = await Roster.find({ leagueId, season: 2026 })
+    .select('userId chatNotifications')
+    .lean() as any[];
+
+  if (rosters.length === 0) return;
+
+  // Resolve display names for mention detection
+  const memberUserIds = rosters.map(r => r.userId);
+  const users = await User.find({ _id: { $in: memberUserIds } })
+    .select('displayName')
+    .lean() as any[];
+  const userMap = new Map<string, string>(
+    users.map(u => [u._id.toString(), u.displayName ?? '']),
+  );
+
+  // Detect @-mentions in the message body. Match display name case-insensitively.
+  // Falls back to no mentions if message is empty (GIF / asset card).
+  const mentionedUserIds = new Set<string>();
+  const lowerMsg = (message ?? '').toLowerCase();
+  if (lowerMsg.length > 0) {
+    for (const r of rosters) {
+      const uid = r.userId.toString();
+      if (uid === senderUserId) continue;
+      const displayName = userMap.get(uid);
+      if (!displayName) continue;
+      const escaped = displayName.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`@${escaped}(?:\\b|$)`, 'i');
+      if (pattern.test(lowerMsg)) mentionedUserIds.add(uid);
+    }
+  }
+
+  // Fetch league name for push title
+  const league = await League.findById(leagueId).select('name').lean() as any;
+  const leagueName = league?.name ?? 'League chat';
+
+  // Body preview — first 80 chars or asset card / gif placeholder
+  let preview = '';
+  if (type === 'gif')        preview = '🎬 sent a GIF';
+  else if (type === 'asset') preview = '📇 shared an asset';
+  else                       preview = (message ?? '').slice(0, 80);
+
+  // Dispatch
+  for (const r of rosters) {
+    const targetId = r.userId.toString();
+    if (targetId === senderUserId) continue;
+    const pref = r.chatNotifications ?? 'mentions';
+    if (pref === 'off') continue;
+    const isMentioned = mentionedUserIds.has(targetId);
+    if (pref === 'mentions' && !isMentioned) continue;
+
+    const title = isMentioned
+      ? `${senderName} mentioned you in ${leagueName}`
+      : `${senderName} in ${leagueName}`;
+
+    sendPushToUser(
+      targetId,
+      title,
+      preview || ' ',
+      { screen: 'chat', leagueId },
+      'general',
+    ).catch(() => {});
+  }
 }
 
 // PATCH — add or remove a reaction
