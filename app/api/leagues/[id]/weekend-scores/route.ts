@@ -7,9 +7,10 @@
  * "Active weekend" = the nearest RaceCalendar entry where raceDate >= now - 24h.
  * If the nearest race is more than 7 days away: returns { hasActiveWeekend: false }.
  *
- * Only sprint qualifying and sprint race points are broken out per-session.
- * Qualifying and race points are tracked in bulk via process-race-logic and will
- * be added in a future phase.
+ * Drivers, principals, and power units are broken out per session (sprint
+ * quali / sprint race / qualifying / race — sprint sessions only on sprint
+ * weekends). Pit crews score only during the race, so they show a single
+ * 'race' session.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -137,25 +138,32 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
-  // Non-driver result maps (keyed by asset slug)
-  const principalPointsBySlug = new Map<string, number>();
-  if (Array.isArray(calendar.principalResults)) {
-    for (const r of calendar.principalResults) {
-      if (r.principalSlug) principalPointsBySlug.set(r.principalSlug, r.points ?? 0);
+  // Per-session maps for principals + power units: slug → (session → points).
+  // Task #9 made these score per-session (sprintQuali / sprintRace / qualifying
+  // / race). Old-format entries with no session field bucket under 'race'.
+  function buildSessionMap(results: any[] | undefined, slugField: string): Map<string, Map<string, number>> {
+    const map = new Map<string, Map<string, number>>();
+    if (!Array.isArray(results)) return map;
+    for (const r of results) {
+      const slug = r[slugField];
+      if (!slug) continue;
+      const sessionKey = r.session ?? 'race';
+      if (!map.has(slug)) map.set(slug, new Map());
+      // Sum in case of duplicate session entries (defensive)
+      const inner = map.get(slug)!;
+      inner.set(sessionKey, (inner.get(sessionKey) ?? 0) + (r.points ?? 0));
     }
+    return map;
   }
 
+  const principalSessionMap = buildSessionMap(calendar.principalResults, 'principalSlug');
+  const powerUnitSessionMap = buildSessionMap(calendar.powerUnitResults, 'powerUnitSlug');
+
+  // Pit crews score only during the race (pit stops), so a single 'race' value.
   const pitCrewPointsBySlug = new Map<string, number>();
   if (Array.isArray(calendar.pitCrewResults)) {
     for (const r of calendar.pitCrewResults) {
       if (r.pitCrewSlug) pitCrewPointsBySlug.set(r.pitCrewSlug, r.points ?? 0);
-    }
-  }
-
-  const powerUnitPointsBySlug = new Map<string, number>();
-  if (Array.isArray(calendar.powerUnitResults)) {
-    for (const r of calendar.powerUnitResults) {
-      if (r.powerUnitSlug) powerUnitPointsBySlug.set(r.powerUnitSlug, r.points ?? 0);
     }
   }
 
@@ -231,10 +239,54 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     };
   }
 
-  function buildNonDriverScore(
-    asset: any,
-    pointsMap: Map<string, number>,
-  ) {
+  // Principals + power units score per session (Task #9). Build the same
+  // multi-session breakdown as drivers — sprint sessions only on sprint
+  // weekends, then qualifying + race.
+  function buildSessionAssetScore(asset: any, sessionMap: Map<string, Map<string, number>>) {
+    if (!asset) return null;
+    const slug         = asset.slug as string;
+    const isBoosted    = boostedSlugs.has(slug); // principals/PUs aren't boostable, but harmless
+    const mult         = isBoosted ? 2 : 1;
+    const slugSessions = sessionMap.get(slug) ?? new Map<string, number>();
+
+    const sessions: {
+      key: string; name: string; points: number | null; scored: boolean;
+      position: number | null; scheduledDate: Date | null; boosted: boolean;
+    }[] = [];
+
+    const pushSession = (key: string, name: string, date: Date | null) => {
+      const found = slugSessions.has(key);
+      sessions.push({
+        key,
+        name,
+        scored:        found,
+        points:        found ? (slugSessions.get(key) ?? 0) * mult : null,
+        position:      null,
+        scheduledDate: date,
+        boosted:       isBoosted,
+      });
+    };
+
+    if (calendar.isSprint) {
+      pushSession('sprintQuali', 'Sprint Qualifying', calendar.sprintQualifyingDate ?? null);
+      pushSession('sprintRace',  'Sprint Race',       calendar.sprintDate ?? null);
+    }
+    pushSession('qualifying', 'Qualifying', calendar.qualifyingDate ?? null);
+    pushSession('race',       'Race',       calendar.raceDate ?? null);
+
+    const weekendPoints = sessions.reduce((sum, s) => sum + (s.points ?? 0), 0);
+    return {
+      slug,
+      name:           asset.name,
+      team:           asset.team,
+      weekendPoints:  Math.round(weekendPoints * 100) / 100,
+      hasWeekendData: sessions.some(s => s.scored),
+      sessions,
+    };
+  }
+
+  // Pit crews score only during the race — single 'race' session.
+  function buildPitCrewScore(asset: any, pointsMap: Map<string, number>) {
     if (!asset) return null;
     const slug      = asset.slug as string;
     const isBoosted = boostedSlugs.has(slug);
@@ -253,6 +305,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         name:          'Race',
         scored:        found,
         points,
+        position:      null,
         scheduledDate: calendar.raceDate ?? null,
         boosted:       isBoosted,
       }],
@@ -280,10 +333,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const rosterScores = {
     driver1:   buildDriverScore(roster.driver1AssetId),
     driver2:   buildDriverScore(roster.driver2AssetId),
-    principal: buildNonDriverScore(roster.principalAssetId, principalPointsBySlug),
-    pitCrew1:  buildNonDriverScore(roster.pitCrew1AssetId,  pitCrewPointsBySlug),
-    pitCrew2:  buildNonDriverScore(roster.pitCrew2AssetId,  pitCrewPointsBySlug),
-    powerUnit: buildNonDriverScore(roster.powerUnitAssetId, powerUnitPointsBySlug),
+    principal: buildSessionAssetScore(roster.principalAssetId, principalSessionMap),
+    pitCrew1:  buildPitCrewScore(roster.pitCrew1AssetId,  pitCrewPointsBySlug),
+    pitCrew2:  buildPitCrewScore(roster.pitCrew2AssetId,  pitCrewPointsBySlug),
+    powerUnit: buildSessionAssetScore(roster.powerUnitAssetId, powerUnitSessionMap),
   };
 
   return NextResponse.json({
