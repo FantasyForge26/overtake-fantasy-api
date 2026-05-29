@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import { PushToken, Notification } from './models';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -53,6 +54,10 @@ async function sendExpoMessages(messages: PushMessage[]): Promise<PushTicket[]> 
     });
   } catch (err) {
     console.error('[push] Expo push transport error:', err);
+    Sentry.captureMessage('expo push failure', {
+      level: 'warning',
+      extra: { stage: 'transport', error: err instanceof Error ? err.message : String(err), messageCount: messages.length },
+    });
     return messages.map(m => ({
       token: m.to,
       status: 'error' as const,
@@ -64,6 +69,10 @@ async function sendExpoMessages(messages: PushMessage[]): Promise<PushTicket[]> 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     console.error(`[push] Expo HTTP ${resp.status}: ${text.slice(0, 500)}`);
+    Sentry.captureMessage('expo push failure', {
+      level: 'warning',
+      extra: { stage: 'http', status: resp.status, body: text.slice(0, 500), messageCount: messages.length },
+    });
     return messages.map(m => ({
       token: m.to,
       status: 'error' as const,
@@ -77,6 +86,10 @@ async function sendExpoMessages(messages: PushMessage[]): Promise<PushTicket[]> 
     body = await resp.json();
   } catch (err) {
     console.error('[push] Expo response parse error:', err);
+    Sentry.captureMessage('expo push failure', {
+      level: 'warning',
+      extra: { stage: 'parse', error: err instanceof Error ? err.message : String(err), messageCount: messages.length },
+    });
     return messages.map(m => ({
       token: m.to,
       status: 'error' as const,
