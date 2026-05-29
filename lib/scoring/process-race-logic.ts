@@ -2,13 +2,34 @@
  * Shared race-processing logic used by both:
  *   - app/api/admin/process-race  (manual, POST with meetingKey)
  *   - app/api/cron/auto-process-race (automated, GET triggered by schedule)
+ *
+ * TRANSACTIONS (H7):
+ *   Pass `options.session` to run all writes inside a Mongoose ClientSession
+ *   so a mid-flight failure rolls everything back. Without this, a crash after
+ *   N of M roster updates leaves partial state, the lock is released by the
+ *   caller's catch block, and the next retry double-scores the first N.
+ *
+ *   Callers should:
+ *     1. const session = await mongoose.startSession();
+ *     2. await session.withTransaction(async () => {
+ *          await ProcessedRace.create([{ meetingKey, raceName: null }], { session });
+ *          result = await processRace(meetingKey, { session });
+ *          // optional: also update RaceCalendar.processed here
+ *        });
+ *     3. await session.endSession();
+ *     4. await recalculateAllOTFv2(2026);   // idempotent, outside the txn
+ *
+ *   recalculateAllOTFv2 is intentionally NOT included here — it's an
+ *   idempotent full-table recompute that can be safely re-run via the
+ *   admin endpoint if it fails. Pulling it into the transaction would
+ *   double the lock window for no atomicity benefit.
  */
 
+import type { ClientSession } from 'mongoose';
 import { Asset, League, Roster, HistoricalSeason, ProcessedRace, RaceCalendar } from '@/lib/models';
 import { buildRaceWeekendData } from '@/lib/scoring/openf1';
 import { calculateRaceWeekendScores, PrincipalStreakState } from '@/lib/scoring/index';
 import { calculateOTFRating } from '@/lib/otf-calculator';
-import { recalculateAllOTFv2 } from '@/lib/otf-recalculate';
 import { loadBoostedSlots, isBoosted } from '@/lib/scoring/boost-helper';
 import { calculatePrincipalSessionScore, SessionType as PrincipalSessionType } from '@/lib/scoring/principal-session';
 import { calculatePowerUnitSessionScores, CarSessionData as PuCarSessionData } from '@/lib/scoring/powerunit-session';
@@ -40,25 +61,45 @@ export interface ProcessRaceResult {
   assetsUpdated: number;
   rostersUpdated: number;
   leagues:       { leagueId: string; rostersScored: number }[];
-  otfRecalc:     { total: number; updated: number; movers: number } | null;
+}
+
+export interface ProcessRaceOptions {
+  /**
+   * When provided, all DB reads and writes inside this function use the
+   * given Mongoose ClientSession. Callers should obtain one via
+   * `mongoose.startSession()` and wrap the call in `session.withTransaction()`.
+   * Without it, behavior is unchanged from pre-H7.
+   */
+  session?: ClientSession;
 }
 
 /**
  * Core scoring function. Assumes DB is already connected.
  * Skips idempotency check — callers are responsible for checking ProcessedRace first.
+ *
+ * Pass `options.session` to participate in a caller-managed transaction.
  */
-export async function processRace(meetingKey: number): Promise<ProcessRaceResult> {
-  // 1. Build race weekend data from OpenF1
+export async function processRace(
+  meetingKey: number,
+  options: ProcessRaceOptions = {},
+): Promise<ProcessRaceResult> {
+  const { session } = options;
+
+  // 1. Build race weekend data from OpenF1 (external API, no session needed)
   const weekendData = await buildRaceWeekendData(meetingKey, POWER_UNIT_MAP);
 
   // Patch race name into the ProcessedRace lock if it exists
-  await ProcessedRace.updateOne({ meetingKey }, { raceName: weekendData.raceName });
+  await ProcessedRace.updateOne(
+    { meetingKey },
+    { raceName: weekendData.raceName },
+    { session },
+  );
 
   // Load calendar flags so we can skip sessions already scored by live crons
-  const raceCalendar = await RaceCalendar.findOne({ meetingKey }).lean() as any;
+  const raceCalendar = await RaceCalendar.findOne({ meetingKey }).session(session ?? null).lean() as any;
 
   // 2. Load principal streak states
-  const principalAssets = await Asset.find({ season: 2026, assetType: 'principal', isActive: true }).lean() as any[];
+  const principalAssets = await Asset.find({ season: 2026, assetType: 'principal', isActive: true }).session(session ?? null).lean() as any[];
   const streakStates: Record<string, PrincipalStreakState> = {};
   for (const pa of principalAssets) {
     streakStates[pa.team ?? pa.teamSlug] = {
@@ -71,7 +112,7 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
   const { scores, newPrincipalStreakStates } = calculateRaceWeekendScores(weekendData, streakStates);
 
   // 4. Load all 2026 assets (needed for per-session principal/PU scoring below)
-  const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).lean();
+  const allAssets: any[] = await Asset.find({ season: 2026, isActive: true }).session(session ?? null).lean();
   const assetById = new Map<string, any>(allAssets.map(a => [a._id.toString(), a]));
 
   // carNumber lookup for sprint quali position mapping (driverSlug → carNumber)
@@ -229,13 +270,13 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
   }
 
   // 6. Score each league's rosters
-  const activeLeagues = await League.find({ status: 'active' });
+  const activeLeagues = await League.find({ status: 'active' }).session(session ?? null);
   let rostersUpdated = 0;
   const leagueSummaries: { leagueId: string; rostersScored: number }[] = [];
 
   for (const league of activeLeagues) {
     const leagueId = league._id.toString();
-    const rosters  = await Roster.find({ leagueId, season: 2026 });
+    const rosters  = await Roster.find({ leagueId, season: 2026 }).session(session ?? null);
     if (!rosters.length) continue;
 
     // Load locked boost selections for this league + round.
@@ -282,7 +323,7 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
       racePoints        = Math.round(racePoints * 100) / 100;
       roster.totalPoints = Math.round(((roster.totalPoints ?? 0) + racePoints) * 100) / 100;
       roster.updatedAt   = new Date();
-      await roster.save();
+      await roster.save({ session });
       rostersScored++;
       rostersUpdated++;
     }
@@ -291,7 +332,7 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     const ranked = [...rosters].sort((a, b) => (b.totalPoints ?? 0) - (a.totalPoints ?? 0));
     for (let i = 0; i < ranked.length; i++) {
       ranked[i].seasonRank = i + 1;
-      await ranked[i].save();
+      await ranked[i].save({ session });
     }
 
     leagueSummaries.push({ leagueId, rostersScored });
@@ -325,7 +366,7 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     const newRaces = (asset.racesCompleted ?? 0) + 1;
     const newAvg   = Math.round((newTotal / newRaces) * 100) / 100;
 
-    const historicalDocs = await HistoricalSeason.find({ assetSlug: asset.slug }).lean() as any[];
+    const historicalDocs = await HistoricalSeason.find({ assetSlug: asset.slug }).session(session ?? null).lean() as any[];
     const historicalSeasons = historicalDocs.map((h: any) => ({
       season:           h.season,
       wins:             h.wins ?? 0,
@@ -360,17 +401,25 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
         if (qr.reachedQ3)       qInc.q3Count = 1;
         else if (qr.reachedQ2)  qInc.q2Count = 1;
       }
-      await Asset.findByIdAndUpdate(asset._id, {
-        $set: { totalPoints: newTotal, racesCompleted: newRaces, avgPointsPerRace: newAvg, otfRating: newOtfRating },
-        ...(Object.keys(qInc).length ? { $inc: qInc } : {}),
-      });
+      await Asset.findByIdAndUpdate(
+        asset._id,
+        {
+          $set: { totalPoints: newTotal, racesCompleted: newRaces, avgPointsPerRace: newAvg, otfRating: newOtfRating },
+          ...(Object.keys(qInc).length ? { $inc: qInc } : {}),
+        },
+        { session },
+      );
     } else {
-      await Asset.findByIdAndUpdate(asset._id, {
-        totalPoints:      newTotal,
-        racesCompleted:   newRaces,
-        avgPointsPerRace: newAvg,
-        otfRating:        newOtfRating,
-      });
+      await Asset.findByIdAndUpdate(
+        asset._id,
+        {
+          totalPoints:      newTotal,
+          racesCompleted:   newRaces,
+          avgPointsPerRace: newAvg,
+          otfRating:        newOtfRating,
+        },
+        { session },
+      );
     }
 
     assetUpdates.push(asset.slug);
@@ -381,6 +430,7 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     await Asset.findOneAndUpdate(
       { season: 2026, assetType: 'principal', team: teamName },
       { $set: { qualifyingStreak: newStreak.qualifyingStreak, raceStreak: newStreak.raceStreak } },
+      { session },
     );
   }
 
@@ -441,21 +491,13 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
           powerUnitResults: powerUnitResultsForCal,
         },
       },
+      { session },
     );
   }
 
-  // ── 11. Recalculate OTF v2 across all 2026 assets ──────────────────────────
-  // The per-asset v1 update above only knew avgPointsPerRace. v2 needs the
-  // full per-race row context (FORM decay, CONS variance, sparse-history
-  // correction, etc.) and is cheap enough to run in full after each race.
-  let otfRecalcSummary: { total: number; updated: number; movers: number } | null = null;
-  try {
-    const r = await recalculateAllOTFv2(2026);
-    otfRecalcSummary = { total: r.total, updated: r.updated, movers: r.movers.length };
-    console.log(`[process-race] OTFv2 recalc: ${r.updated}/${r.total} updated, ${r.movers.length} big movers (Δ≥3)`);
-  } catch (err) {
-    console.error('[process-race] OTFv2 recalc failed (non-fatal):', err);
-  }
+  // NOTE: OTFv2 recalc (recalculateAllOTFv2) is intentionally NOT done here.
+  // It's an idempotent full-table recompute and runs as a separate post-
+  // transaction step in the caller. See file-level docstring.
 
   return {
     success:        true,
@@ -465,6 +507,5 @@ export async function processRace(meetingKey: number): Promise<ProcessRaceResult
     assetsUpdated:  assetUpdates.length,
     rostersUpdated,
     leagues:        leagueSummaries,
-    otfRecalc:      otfRecalcSummary,
   };
 }

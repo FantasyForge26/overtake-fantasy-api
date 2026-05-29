@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { RaceCalendar, ProcessedRace, Roster } from '@/lib/models';
-import { processRace } from '@/lib/scoring/process-race-logic';
+import { processRace, ProcessRaceResult } from '@/lib/scoring/process-race-logic';
+import { recalculateAllOTFv2 } from '@/lib/otf-recalculate';
 import { sendPushToUser } from '@/lib/push';
 
 const RACE_BUFFER_MS = 3.5 * 60 * 60 * 1000; // 3.5 hours after raceDate
@@ -28,7 +30,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'No pending races' });
     }
 
-    // If already scored externally, mark processed and continue to next
+    // If already scored externally, mark processed and continue to next.
+    // (Outside the transaction — no scoring writes here, just a flag flip.)
     const alreadyProcessed = await ProcessedRace.findOne({ meetingKey: calendar.meetingKey }).lean();
     if (alreadyProcessed) {
       await RaceCalendar.updateOne({ _id: calendar._id }, { processed: true });
@@ -51,23 +54,37 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Reserve idempotency lock
-    await ProcessedRace.create({ meetingKey: calendar.meetingKey, raceName: null });
-
-    // Score the race
-    let result;
+    // ── Atomic scoring transaction (H7) ────────────────────────────────────
+    // Wraps lock creation + processRace writes + calendar.processed flag in
+    // a single Mongoose ClientSession. A mid-flight failure rolls everything
+    // back so the next cron tick can safely retry from scratch — no partial
+    // state, no double-scoring.
+    let result: ProcessRaceResult;
+    const session = await mongoose.startSession();
     try {
-      result = await processRace(calendar.meetingKey);
-    } catch (err: any) {
-      // Release lock so it can be retried
-      await ProcessedRace.deleteOne({ meetingKey: calendar.meetingKey });
+      result = await session.withTransaction(async () => {
+        await ProcessedRace.create([{ meetingKey: calendar.meetingKey, raceName: null }], { session });
+        const r = await processRace(calendar.meetingKey, { session });
+        await RaceCalendar.updateOne({ _id: calendar._id }, { processed: true }, { session });
+        return r;
+      }) as ProcessRaceResult;
+    } catch (err) {
+      console.error('[cron/auto-process-race] transaction failed:', err);
       return NextResponse.json({ error: 'Scoring failed. Check server logs.' }, { status: 502 });
+    } finally {
+      await session.endSession();
     }
 
-    // Mark calendar as processed
-    await RaceCalendar.updateOne({ _id: calendar._id }, { processed: true });
+    // Post-transaction: idempotent OTFv2 full-table recompute.
+    try {
+      const r = await recalculateAllOTFv2(2026);
+      console.log(`[cron/auto-process-race] OTFv2 recalc: ${r.updated}/${r.total} updated, ${r.movers.length} big movers (Δ≥3)`);
+    } catch (err) {
+      console.error('[cron/auto-process-race] OTFv2 recalc failed (non-fatal):', err);
+    }
 
-    // Send push notifications to all affected managers
+    // Send push notifications to all affected managers (also post-transaction;
+    // Expo push is external and not part of the atomic guarantee).
     const scoredLeagueIds = result.leagues.map(l => l.leagueId);
     const notifiedUserIds = new Set<string>();
     let notificationsSent = 0;

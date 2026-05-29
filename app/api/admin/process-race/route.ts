@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { ProcessedRace } from '@/lib/models';
-import { processRace } from '@/lib/scoring/process-race-logic';
+import { processRace, ProcessRaceResult } from '@/lib/scoring/process-race-logic';
+import { recalculateAllOTFv2 } from '@/lib/otf-recalculate';
 
 export async function POST(req: NextRequest) {
   if (req.headers.get('x-admin-key') !== process.env.ADMIN_SECRET) {
@@ -18,7 +20,8 @@ export async function POST(req: NextRequest) {
 
   await connectDB();
 
-  // Idempotency check
+  // Idempotency check (pre-transaction). The transaction body re-creates the
+  // lock; if force=true we delete the existing lock here so the create succeeds.
   if (force) {
     await ProcessedRace.deleteOne({ meetingKey });
   } else {
@@ -31,23 +34,41 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Reserve the slot before fetching OpenF1
-  const lock = await ProcessedRace.create({ meetingKey, raceName: null });
-
-  let result;
+  // ── Atomic scoring transaction (H7) ─────────────────────────────────────────
+  // Wraps lock creation + processRace writes in a Mongoose ClientSession.
+  // A mid-flight failure rolls back the lock AND every roster/asset/calendar
+  // write together. Without this, a partial failure would leave some rosters
+  // double-scorable on the next retry.
+  let result: ProcessRaceResult;
+  const session = await mongoose.startSession();
   try {
-    result = await processRace(meetingKey);
-  } catch (err: any) {
-    await ProcessedRace.deleteOne({ _id: lock._id });
+    result = await session.withTransaction(async () => {
+      await ProcessedRace.create([{ meetingKey, raceName: null }], { session });
+      return processRace(meetingKey, { session });
+    }) as ProcessRaceResult;
+  } catch (err) {
+    console.error('[admin/process-race] transaction failed:', err);
     return NextResponse.json({ error: 'Scoring failed. Check server logs.' }, { status: 502 });
+  } finally {
+    await session.endSession();
+  }
+
+  // Post-transaction: idempotent OTFv2 full-table recompute. Safe to re-run
+  // via this endpoint if it fails; deliberately outside the transaction so
+  // the lock window stays small.
+  try {
+    const r = await recalculateAllOTFv2(2026);
+    console.log(`[admin/process-race] OTFv2 recalc: ${r.updated}/${r.total} updated, ${r.movers.length} big movers (Δ≥3)`);
+  } catch (err) {
+    console.error('[admin/process-race] OTFv2 recalc failed (non-fatal):', err);
   }
 
   return NextResponse.json({
-    success:       true,
-    raceName:      result.raceName,
-    hasSprint:     result.hasSprint,
-    assetsUpdated: result.assetsUpdated,
+    success:        true,
+    raceName:       result.raceName,
+    hasSprint:      result.hasSprint,
+    assetsUpdated:  result.assetsUpdated,
     rostersUpdated: result.rostersUpdated,
-    leagues:       result.leagues,
+    leagues:        result.leagues,
   });
 }
