@@ -10,6 +10,31 @@ import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 type Params = { params: Promise<{ id: string }> };
 
+// ── Chat hardening constants (H3) ───────────────────────────────────────────
+// Tuned to be invisible to legitimate users (4000 chars is ~600 words) while
+// preventing DB stuffing, runaway notifyLeagueChat regex work, and reaction
+// Map explosion.
+const MAX_MESSAGE_LEN          = 4000;
+const MAX_REACTION_EMOJI_LEN   = 16;   // single emoji + variation selectors
+const MAX_REACTIONS_PER_MESSAGE = 24;  // distinct emoji types per message
+const ALLOWED_TYPES = new Set(['text', 'asset', 'gif']);
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
+/**
+ * Accepts giphy.com and any *.giphy.com subdomain (media.giphy.com,
+ * media[0-4].giphy.com, i.giphy.com, etc.) over HTTPS only. Anything else —
+ * arbitrary phishing host, http://, ftp://, javascript: — fails closed.
+ */
+function isValidGiphyUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    return u.hostname === 'giphy.com' || u.hostname.endsWith('.giphy.com');
+  } catch {
+    return false;
+  }
+}
+
 function serializeMessage(doc: any) {
   const reactions: Record<string, string[]> = {};
   if (doc.reactions instanceof Map) {
@@ -69,11 +94,43 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!allowed) return rateLimitedResponse(retryAfterSec);
 
   const { id: leagueId } = await params;
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   const { message, type = 'text', assetId, assetName, assetOtf, gifUrl } = body;
 
-  if (!message && type === 'text') return NextResponse.json({ error: 'message is required' }, { status: 400 });
-  if (!gifUrl && type === 'gif') return NextResponse.json({ error: 'gifUrl is required for gif type' }, { status: 400 });
+  // ── Input validation (H3 hardening) ─────────────────────────────────────────
+  if (!ALLOWED_TYPES.has(type)) {
+    return NextResponse.json({ error: 'Invalid message type' }, { status: 400 });
+  }
+  if (message != null && typeof message !== 'string') {
+    return NextResponse.json({ error: 'message must be a string' }, { status: 400 });
+  }
+  if (typeof message === 'string' && message.length > MAX_MESSAGE_LEN) {
+    return NextResponse.json(
+      { error: `Message exceeds ${MAX_MESSAGE_LEN} characters` },
+      { status: 400 },
+    );
+  }
+  if (!message && type === 'text') {
+    return NextResponse.json({ error: 'message is required' }, { status: 400 });
+  }
+  if (type === 'gif') {
+    if (typeof gifUrl !== 'string' || !isValidGiphyUrl(gifUrl)) {
+      return NextResponse.json({ error: 'Invalid GIF url' }, { status: 400 });
+    }
+  }
+  if (type === 'asset') {
+    if (typeof assetId !== 'string' || !OBJECT_ID_RE.test(assetId)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
+    }
+    if (assetName != null && (typeof assetName !== 'string' || assetName.length > 120)) {
+      return NextResponse.json({ error: 'Invalid asset name' }, { status: 400 });
+    }
+    if (assetOtf != null && (typeof assetOtf !== 'number' || !Number.isFinite(assetOtf))) {
+      return NextResponse.json({ error: 'Invalid asset OTF' }, { status: 400 });
+    }
+  }
+
+  const trimmedMessage = typeof message === 'string' ? message.trim() : '';
 
   const user = session.user as any;
   const userId = user.id ?? user._id ?? user.sub ?? '';
@@ -91,19 +148,20 @@ export async function POST(req: NextRequest, { params }: Params) {
     userId,
     userName,
     userInitials,
-    message: message ?? '',
+    message: trimmedMessage,
     type,
     assetId,
     assetName,
     assetOtf,
-    gifUrl,
+    gifUrl: type === 'gif' ? gifUrl : undefined,
     reactions: {},
   });
 
   // Fire-and-forget push notifications to other league members based on their
   // chatNotifications preference. Mentioned users get the push even if their
-  // preference is 'mentions' only.
-  notifyLeagueChat(leagueId, userId, userName, message ?? '', type, gifUrl).catch(err =>
+  // preference is 'mentions' only. Uses the post-validation trimmed message
+  // so notifyLeagueChat sees the same body that was persisted.
+  notifyLeagueChat(leagueId, userId, userName, trimmedMessage, type, gifUrl).catch(err =>
     console.error('[chat] notification dispatch failed:', err),
   );
 
@@ -188,12 +246,25 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id: leagueId } = await params;
-  const { messageId, emoji } = await req.json();
-  if (!messageId || !emoji) return NextResponse.json({ error: 'messageId and emoji required' }, { status: 400 });
-
   const user = session.user as any;
   const userId = user.id ?? user._id ?? user.sub ?? '';
+
+  // Reaction toggles share the 'message' preset (30/min per user). Tapping a
+  // reaction is conversational, so a chat-style limit is right; this also
+  // stops a script from spamming reactions to flood the Map.
+  const rl = await checkRateLimit('message', `chat-react:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
+
+  const { id: leagueId } = await params;
+  const body = await req.json().catch(() => ({}));
+  const { messageId, emoji } = body;
+
+  if (typeof messageId !== 'string' || !OBJECT_ID_RE.test(messageId)) {
+    return NextResponse.json({ error: 'Invalid messageId' }, { status: 400 });
+  }
+  if (typeof emoji !== 'string' || emoji.length === 0 || emoji.length > MAX_REACTION_EMOJI_LEN) {
+    return NextResponse.json({ error: 'Invalid emoji' }, { status: 400 });
+  }
 
   await connectDB();
 
@@ -204,14 +275,31 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const msg = await ChatMessage.findOne({ _id: messageId, leagueId });
   if (!msg) return NextResponse.json({ error: 'Message not found' }, { status: 404 });
 
-  const users: string[] = msg.reactions.get(emoji) ?? [];
+  // Cap distinct reaction emojis per message. Adding a NEW emoji on an already
+  // full message returns 400; toggling an existing emoji is always allowed.
+  const reactionsMap: Map<string, string[]> = msg.reactions;
+  const isNewEmoji = !reactionsMap.has(emoji);
+  if (isNewEmoji && reactionsMap.size >= MAX_REACTIONS_PER_MESSAGE) {
+    return NextResponse.json(
+      { error: `Maximum ${MAX_REACTIONS_PER_MESSAGE} distinct reactions per message` },
+      { status: 400 },
+    );
+  }
+
+  const users: string[] = reactionsMap.get(emoji) ?? [];
   const idx = users.indexOf(userId);
   if (idx >= 0) {
     users.splice(idx, 1);
   } else {
     users.push(userId);
   }
-  msg.reactions.set(emoji, users);
+  // Drop the emoji entirely if no users remain — keeps the Map tidy and
+  // prevents accumulation of empty entries against MAX_REACTIONS_PER_MESSAGE.
+  if (users.length === 0) {
+    reactionsMap.delete(emoji);
+  } else {
+    reactionsMap.set(emoji, users);
+  }
   await msg.save();
 
   return NextResponse.json(serializeMessage(msg));
