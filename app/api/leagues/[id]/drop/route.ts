@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { League, Roster, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 const ROSTER_SLOTS = [
   'driver1AssetId',
@@ -24,6 +25,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Pairs with the add-route limit so
+  // add/drop loops are both bounded.
+  const rl = await checkRateLimit('write', `roster-drop:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { id: leagueId } = await params;
   const { dropAssetId } = await req.json();

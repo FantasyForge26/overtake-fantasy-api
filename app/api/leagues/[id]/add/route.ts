@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { Asset, League, Roster, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 const SLOT_MAP: Record<string, string[]> = {
   driver:     ['driver1AssetId', 'driver2AssetId'],
@@ -22,6 +23,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Plenty for normal free-agency activity,
+  // hard cap against scripted roster thrashing.
+  const rl = await checkRateLimit('write', `roster-add:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { id: leagueId } = await params;
   const { addAssetId, dropAssetId } = await req.json();
