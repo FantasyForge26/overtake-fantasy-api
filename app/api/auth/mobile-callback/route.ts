@@ -1,39 +1,37 @@
-import { createHmac } from 'crypto';
+/**
+ * Mobile OAuth callback. Lands here after Google sign-in via NextAuth, mints a
+ * signed mobile session token, and redirects back into the app via the
+ * overtakefantasy:// deep link with both the user info and the token.
+ *
+ * The token is the authoritative auth credential going forward — the
+ * userId/email/name/image params are display-only and the client should not
+ * trust them for auth decisions.
+ */
+
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-
-function createSignedToken(userId: string, email: string): string {
-  const payload = Buffer.from(
-    JSON.stringify({ userId, email, exp: Math.floor(Date.now() / 1000) + 300 })
-  ).toString('base64url');
-
-  const sig = createHmac('sha256', process.env.NEXTAUTH_SECRET!)
-    .update(payload)
-    .digest('base64url');
-
-  return `${payload}.${sig}`;
-}
+import { signMobileToken } from '@/lib/auth/mobile-token';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-
   if (!session?.user) {
     redirect('/api/auth/signin');
   }
 
   const { id, email, name, image } = session.user as {
-    id: string;
+    id:    string;
     email: string;
     name?: string | null;
     image?: string | null;
   };
 
-  createSignedToken(id, email);
+  const token = signMobileToken(id, email);
 
   const params = new URLSearchParams({
     userId: id,
-    email: email,
+    email,
+    token,
     ...(name ? { name } : {}),
     ...(image ? { image } : {}),
   });
