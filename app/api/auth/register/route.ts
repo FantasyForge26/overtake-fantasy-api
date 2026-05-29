@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { connectDB } from '@/lib/db';
 import { User } from '@/lib/models';
-import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const { allowed } = await checkRateLimit(`register:${ip}`);
-  if (!allowed) {
-    return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 });
-  }
+  const { allowed, retryAfterSec } = await checkRateLimit('auth', `register:${ip}`);
+  if (!allowed) return rateLimitedResponse(retryAfterSec);
 
   const { email, password, displayName } = await req.json();
 

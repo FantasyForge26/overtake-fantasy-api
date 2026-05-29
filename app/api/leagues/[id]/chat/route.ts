@@ -6,6 +6,7 @@ import { connectDB } from '@/lib/db';
 import { ChatMessage, Roster, User, League } from '@/lib/models';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
 import { sendPushToUser } from '@/lib/push';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -59,6 +60,13 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function POST(req: NextRequest, { params }: Params) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // Per-user message rate limit: 30 msgs/min. Stops chat flooding without
+  // affecting normal conversation. Keyed on userId so one bad actor can't
+  // affect the rest of the league.
+  const rlUserId = (session.user as any).id as string;
+  const { allowed, retryAfterSec } = await checkRateLimit('message', `chat:${rlUserId}`);
+  if (!allowed) return rateLimitedResponse(retryAfterSec);
 
   const { id: leagueId } = await params;
   const body = await req.json();

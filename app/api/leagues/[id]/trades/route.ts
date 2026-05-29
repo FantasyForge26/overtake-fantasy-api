@@ -15,6 +15,7 @@ import { connectDB } from '@/lib/db';
 import { Trade, Roster, Asset, User } from '@/lib/models';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
 import { validateTradeOTFBalance, validateTradeSlotCapacity, TradeAssetSummary } from '@/lib/trade-validation';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -61,6 +62,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: leagueId } = await params;
   const userId = (session.user as any).id as string;
+
+  // 'write' preset: 60/min per user — generous for normal trade activity,
+  // hard cap against a script proposing trades in a loop to spam counterparties.
+  const { allowed, retryAfterSec } = await checkRateLimit('write', `trade:${userId}`);
+  if (!allowed) return rateLimitedResponse(retryAfterSec);
 
   await connectDB();
   if (!(await verifyLeagueMembership(leagueId, userId))) {

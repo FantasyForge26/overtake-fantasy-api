@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { Asset, League, Roster, WaiverBid } from '@/lib/models';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 const WAIVER_TYPES = ['waivers', 'reverseStandings'];
 
@@ -12,6 +13,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).id as string;
+
+  // 'write' preset: 60/min per user — well above realistic bid-edit cadence.
+  const rl = await checkRateLimit('write', `waiver-bid:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
+
   const { id: leagueId } = await params;
   const { assetId, dropAssetId, bidAmount } = await req.json();
 

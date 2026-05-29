@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { NewsSummary } from '@/lib/models';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -17,6 +18,14 @@ export async function GET(req: NextRequest) {
   if (!articleUrl) {
     return NextResponse.json({ error: 'url query param is required' }, { status: 400 });
   }
+
+  // Anthropic call is metered. The cache below handles repeats, but a
+  // miss-storm could still rack up cost — 5/min per user keeps that bounded.
+  // Applied before the cache check on purpose: rate-limit budget is per
+  // request, regardless of hit or miss.
+  const rlUserId = (session.user as any).id as string;
+  const { allowed, retryAfterSec } = await checkRateLimit('expensive', `news:${rlUserId}`);
+  if (!allowed) return rateLimitedResponse(retryAfterSec);
 
   await connectDB();
 
