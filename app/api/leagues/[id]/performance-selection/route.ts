@@ -6,6 +6,7 @@ import { Roster, PerformanceSelection, RaceCalendar } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { firstSessionLockTime } from '@/lib/race-calendar-helpers';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -87,6 +88,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const userId = (session.user as any).id as string;
   const { id: leagueId } = await params;
+
+  // 'write' preset (60/min per user). Plenty for normal boost-selection
+  // flow, hard cap against a script flipping selections to game scoring.
+  const rl = await checkRateLimit('write', `perf-selection:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { round, driver1Boost, driver2Boost, pitCrew1Boost, pitCrew2Boost } = await req.json();
 

@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { DraftQueue } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -38,6 +39,11 @@ export async function POST(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Users update queue infrequently
+  // during a draft; 60/min is plenty for legitimate use.
+  const rl = await checkRateLimit('write', `draft-queue:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { leagueId, queue } = await req.json();
 

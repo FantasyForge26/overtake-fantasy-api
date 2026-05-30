@@ -12,6 +12,7 @@ import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { Roster } from '@/lib/models';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 const VALID_PREFS = ['all', 'mentions', 'off'] as const;
 
@@ -42,6 +43,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id: leagueId } = await params;
   const userId = (session.user as any).id as string;
+
+  // 'write' preset (60/min per user).
+  const rl = await checkRateLimit('write', `chat-prefs:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const body = await req.json().catch(() => ({}));
   const { chatNotifications } = body as { chatNotifications?: string };

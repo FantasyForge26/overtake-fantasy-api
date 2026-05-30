@@ -6,6 +6,7 @@ import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
 import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -17,6 +18,13 @@ export async function POST(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). One pick per second is far above any
+  // legitimate draft cadence (snake drafts have ≥60s pick timers). The draft
+  // state machine already rejects out-of-turn picks; this limit prevents a
+  // misbehaving client from hammering the endpoint between turns.
+  const rl = await checkRateLimit('write', `draft-pick:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { leagueId, assetId } = await req.json();
 

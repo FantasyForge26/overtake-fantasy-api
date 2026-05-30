@@ -16,6 +16,7 @@ import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { Trade, Roster } from '@/lib/models';
 import { validateTradeOTFBalance, validateTradeSlotCapacity, TradeAssetSummary } from '@/lib/trade-validation';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; tradeId: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: leagueId, tradeId } = await params;
   const userId = (session.user as any).id as string;
+
+  // 'write' preset (60/min per user). Trade accepts mutate two rosters atomically;
+  // limit prevents accept-spam abuse and reduces risk of concurrent-accept races.
+  const rl = await checkRateLimit('write', `trade-accept:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   await connectDB();
 
