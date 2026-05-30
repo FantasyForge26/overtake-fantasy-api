@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { League, Roster, DraftSession, SeasonStanding, User, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -43,6 +44,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Commissioner-only at the route, so
+  // limit is defense in depth.
+  const rl = await checkRateLimit('write', `league-update:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { id } = await params;
 
@@ -115,6 +121,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'auth' preset (5/15min per user). League delete is destructive and
+  // irreversible — wipes rosters, draft sessions, standings. Tighter limit
+  // here forces a backoff if a script tries to mass-delete.
+  const rl = await checkRateLimit('auth', `league-delete:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { id } = await params;
 

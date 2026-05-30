@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
 import { League, Asset, DraftSession, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 function buildSnakeDraftOrder(memberIds: string[], totalRounds: number): string[] {
   const order: string[] = [];
@@ -24,6 +25,11 @@ export async function POST(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Commissioner-only at the route, so
+  // the limit is defense in depth against scripted retries.
+  const rl = await checkRateLimit('write', `draft-start:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { leagueId } = await req.json();
 

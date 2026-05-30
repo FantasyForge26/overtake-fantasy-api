@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db';
 import { League, Roster, Asset, RaceResult, PerformanceSelection, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { verifyLeagueMembership } from '@/lib/auth-helpers';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 import {
   calculateDriverRaceScore,
   calculatePrincipalScore,
@@ -40,6 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const userId = (session.user as any).id as string;
   const { id: leagueId } = await params;
+
+  // 'write' preset (60/min per user). Commissioner-only at the route;
+  // limit is defense in depth against scripted result submissions.
+  const rl = await checkRateLimit('write', `results:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   await connectDB();
 

@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, DraftQueue, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim, nextNeededAssetType, neededAssetTypes, sortCandidatesForAutoDraft } from '@/lib/pick-helpers';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -16,6 +17,11 @@ export async function POST(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // 'write' preset (60/min per user). Pairs with draft/pick — same cadence
+  // ceiling. Gated downstream by currentDrafterId check.
+  const rl = await checkRateLimit('write', `draft-auto-pick:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   const { leagueId } = await req.json();
 
