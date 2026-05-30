@@ -599,6 +599,12 @@ const NotificationSchema = new Schema({
 });
 
 NotificationSchema.index({ userId: 1, createdAt: -1 });
+// TTL: notifications auto-delete 90 days after creation. Without this the
+// collection grows unbounded — race weekends produce ~100+ docs per user
+// (per-driver scoring summaries, push tickets, draft turns, league chat
+// mentions). MongoDB's TTL monitor runs every ~60s. The companion list
+// index above is unaffected; both indexes coexist on createdAt.
+NotificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 // ---------------------------------------------------------------------------
 // NewsSummary
