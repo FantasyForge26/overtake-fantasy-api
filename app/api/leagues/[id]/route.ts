@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { connectDB } from '@/lib/db';
+import mongoose from 'mongoose';
 import { League, Roster, DraftSession, SeasonStanding, User, Transaction } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
@@ -141,13 +142,32 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: 'Only the commissioner can delete this league' }, { status: 403 });
   }
 
-  await Promise.all([
-    League.deleteOne({ _id: id }),
-    Roster.deleteMany({ leagueId: id }),
-    DraftSession.deleteMany({ leagueId: id }),
-    SeasonStanding.deleteMany({ leagueId: id }),
-    User.updateMany({ leagueIds: id }, { $pull: { leagueIds: id } }),
-  ]);
+  // M8: Atomic delete. The previous Promise.all could leave the DB in a
+  // corrupted half-deleted state if any one operation failed — League gone
+  // but Rosters/DraftSession/SeasonStanding orphaned, or User.leagueIds still
+  // pointing at a deleted league. session.withTransaction rolls everything
+  // back atomically on any failure, mirroring the H7 pattern.
+  const dbSession = await mongoose.startSession();
+  try {
+    await dbSession.withTransaction(async () => {
+      await Promise.all([
+        League.deleteOne({ _id: id }, { session: dbSession }),
+        Roster.deleteMany({ leagueId: id }, { session: dbSession }),
+        DraftSession.deleteMany({ leagueId: id }, { session: dbSession }),
+        SeasonStanding.deleteMany({ leagueId: id }, { session: dbSession }),
+        User.updateMany(
+          { leagueIds: id },
+          { $pull: { leagueIds: id } },
+          { session: dbSession },
+        ),
+      ]);
+    });
+  } catch (err) {
+    console.error('[league/delete] transaction failed:', err);
+    return NextResponse.json({ error: 'Delete failed. League state unchanged.' }, { status: 500 });
+  } finally {
+    await dbSession.endSession();
+  }
 
   return NextResponse.json({ success: true });
 }
