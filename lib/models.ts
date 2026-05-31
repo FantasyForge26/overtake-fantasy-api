@@ -539,6 +539,12 @@ const ChatMessageSchema = new Schema({
 }, { timestamps: true });
 
 ChatMessageSchema.index({ leagueId: 1, createdAt: 1 });
+// TTL: chat messages auto-delete 2 years after creation. Covers two full F1
+// seasons + offseason banter — long enough that mid-season memes don't
+// vanish, short enough to bound the collection. Mongoose autoIndex creates
+// this on first cold-start; MongoDB's TTL monitor runs every ~60s.
+// App started March 2026 so first deletions happen early 2028.
+ChatMessageSchema.index({ createdAt: 1 }, { expireAfterSeconds: 730 * 24 * 60 * 60 });
 
 // ---------------------------------------------------------------------------
 // AssetNews
