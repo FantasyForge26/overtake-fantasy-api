@@ -19,6 +19,7 @@ import { getMobileSession } from '@/lib/mobile-auth';
 import { connectDB } from '@/lib/db';
 import { Notification, PushToken } from '@/lib/models';
 import { sendPushToUser } from '@/lib/push';
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
   const session = (await getServerSession(authOptions)) ?? (await getMobileSession(req));
@@ -27,6 +28,13 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = (session.user as any).id as string;
+
+  // 'expensive' preset (5/min per user). test-push fires a real Expo push
+  // (which costs against Expo's per-token rate budget). Self-only — push goes
+  // to your own devices — so abuse is bounded, but Expo will throttle hard if
+  // we hammer the endpoint and could DeviceNotRegister legitimate tokens.
+  const rl = await checkRateLimit('expensive', `test-push:${userId}`);
+  if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec);
 
   await connectDB();
 
