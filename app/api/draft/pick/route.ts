@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, rollbackClaim } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, hasOpenSlotForType, rollbackClaim } from '@/lib/pick-helpers';
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
@@ -58,6 +58,24 @@ export async function POST(req: NextRequest) {
 
   const assetType: string = asset.assetType;
 
+  // F3 fix: reject over-draft BEFORE atomicClaimAsset so we never enter the
+  // racy state. Each roster has exactly 2 driver + 1 principal + 2 pitCrew +
+  // 1 powerUnit slots. Without this check, assignRosterSlot would silently
+  // overwrite slot 2 (drivers/pitCrews) or the principal/powerUnit slot.
+  const userRoster = await Roster.findOne({ leagueId, userId }).lean() as any;
+  if (!userRoster) {
+    return NextResponse.json({ error: 'Roster not found' }, { status: 404 });
+  }
+  if (!hasOpenSlotForType(userRoster, assetType)) {
+    const niceType = assetType === 'pitCrew' ? 'pit crew'
+      : assetType === 'powerUnit' ? 'power unit'
+      : assetType;
+    return NextResponse.json(
+      { error: `Your roster already has the maximum number of ${niceType}s.` },
+      { status: 400 },
+    );
+  }
+
   const pickIndex = draftSession.currentPickIndex;
   const memberCount = draftSession.draftOrder.length / draftSession.totalRounds;
   const newPickIndex = pickIndex + 1;
@@ -91,7 +109,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Asset already on a roster — please pick again' }, { status: 409 });
   }
 
-  await assignRosterSlot(leagueId, userId, asset._id, assetType);
+  // assignRosterSlot now throws SLOT_FULL if the roster has no open slot for
+  // this asset type. The pre-claim hasOpenSlotForType check above SHOULD make
+  // this impossible — but if it ever does throw, roll back the atomic claim
+  // so the asset stays available for other drafters.
+  try {
+    await assignRosterSlot(leagueId, userId, asset._id, assetType);
+  } catch (err: any) {
+    console.error('[draft/pick] assignRosterSlot failed:', err?.message ?? err);
+    await rollbackClaim(updatedSession._id, asset._id);
+    if (err?.message?.startsWith('SLOT_FULL:')) {
+      return NextResponse.json(
+        { error: 'Your roster is already full for this position.' },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ error: 'Pick failed — please retry' }, { status: 500 });
+  }
 
   // Check if draft is complete
   if (updatedSession.currentPickIndex >= updatedSession.totalPicks) {

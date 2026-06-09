@@ -61,6 +61,27 @@ export function neededAssetTypes(roster: any): string[] {
 }
 
 /**
+ * Returns true if the roster has an open slot for the given asset type.
+ *
+ * Used by /api/draft/pick to reject over-draft attempts BEFORE atomicClaimAsset
+ * runs. Without this check, a user could pick a third driver and the server
+ * would silently overwrite their driver2 slot (the existing assignRosterSlot
+ * code did `else { driver2 = newAsset }` with no guard).
+ *
+ * Roster slot caps: 2 drivers, 1 principal, 2 pit crews, 1 power unit (6 total).
+ */
+export function hasOpenSlotForType(roster: any, assetType: string): boolean {
+  if (!roster) return false;
+  switch (assetType) {
+    case 'driver':    return !roster.driver1AssetId || !roster.driver2AssetId;
+    case 'principal': return !roster.principalAssetId;
+    case 'pitCrew':   return !roster.pitCrew1AssetId || !roster.pitCrew2AssetId;
+    case 'powerUnit': return !roster.powerUnitAssetId;
+    default:          return false;
+  }
+}
+
+/**
  * Per-asset-type draft priority. Higher = picked first when slots are open
  * across multiple types. Reflects approximate per-race fantasy points
  * contribution — drivers score ~50/race, principals ~25-30, pit crews ~15-20,
@@ -185,7 +206,14 @@ export async function rollbackClaim(
 
 /**
  * Assigns the picked asset to the correct roster slot.
- * For driver and pitCrew (two slots each), reads the roster to determine which slot is open.
+ *
+ * Defense-in-depth: THROWS `SLOT_FULL: <type>` if no open slot exists for the
+ * asset type. Previously this silently overwrote slot 2 (driver2 / pitCrew2)
+ * when both slots were already filled, OR overwrote the principal/powerUnit
+ * slot via unconditional $set. Either case corrupted the roster.
+ *
+ * Callers MUST guard with hasOpenSlotForType BEFORE invoking this. The throw
+ * here is a safety net for any future code path that forgets to check.
  */
 export async function assignRosterSlot(
   leagueId: string | mongoose.Types.ObjectId,
@@ -195,9 +223,10 @@ export async function assignRosterSlot(
 ): Promise<void> {
   if (assetType === 'driver') {
     const roster = await Roster.findOne({ leagueId, userId });
-    if (!roster) return;
-    if (!roster.driver1AssetId) { roster.driver1AssetId = assetId; }
-    else { roster.driver2AssetId = assetId; }
+    if (!roster) throw new Error('ROSTER_NOT_FOUND');
+    if (!roster.driver1AssetId)      { roster.driver1AssetId = assetId; }
+    else if (!roster.driver2AssetId) { roster.driver2AssetId = assetId; }
+    else throw new Error('SLOT_FULL: driver');
     roster.updatedAt = new Date();
     await roster.save();
     return;
@@ -205,23 +234,27 @@ export async function assignRosterSlot(
 
   if (assetType === 'pitCrew') {
     const roster = await Roster.findOne({ leagueId, userId });
-    if (!roster) return;
-    if (!roster.pitCrew1AssetId) { roster.pitCrew1AssetId = assetId; }
-    else { roster.pitCrew2AssetId = assetId; }
+    if (!roster) throw new Error('ROSTER_NOT_FOUND');
+    if (!roster.pitCrew1AssetId)      { roster.pitCrew1AssetId = assetId; }
+    else if (!roster.pitCrew2AssetId) { roster.pitCrew2AssetId = assetId; }
+    else throw new Error('SLOT_FULL: pitCrew');
     roster.updatedAt = new Date();
     await roster.save();
     return;
   }
 
-  const fieldMap: Record<string, string> = {
-    principal: 'principalAssetId',
-    powerUnit:  'powerUnitAssetId',
-  };
-  const field = fieldMap[assetType];
-  if (field) {
-    await Roster.updateOne(
-      { leagueId, userId },
+  if (assetType === 'principal' || assetType === 'powerUnit') {
+    const field = assetType === 'principal' ? 'principalAssetId' : 'powerUnitAssetId';
+    // Filter requires the slot to be unset — atomic guard against overwrite.
+    const result = await Roster.updateOne(
+      { leagueId, userId, [field]: { $in: [null, undefined] } },
       { $set: { [field]: assetId, updatedAt: new Date() } },
     );
+    if (result.matchedCount === 0) {
+      throw new Error(`SLOT_FULL: ${assetType}`);
+    }
+    return;
   }
+
+  throw new Error(`UNKNOWN_ASSET_TYPE: ${assetType}`);
 }
