@@ -589,6 +589,9 @@ const NotificationSchema = new Schema({
   body:      { type: String },
   read:      { type: Boolean, default: false },
   data:      { type: Schema.Types.Mixed },
+  // For interactive notifications (league_invite). When populated, the UI hides
+  // Accept/Decline buttons. 'accepted' / 'declined' / null are the only valid values.
+  actionTaken: { type: String, enum: ['accepted', 'declined'], default: null },
   createdAt: { type: Date, default: Date.now },
   // Push delivery observability — populated by sendPushToUser/Users.
   // Each pushTicket records what Expo's /push/send endpoint returned for one
