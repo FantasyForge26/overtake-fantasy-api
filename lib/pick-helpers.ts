@@ -82,33 +82,53 @@ export function hasOpenSlotForType(roster: any, assetType: string): boolean {
 }
 
 /**
- * Per-asset-type draft priority. Higher = picked first when slots are open
- * across multiple types. Reflects approximate per-race fantasy points
- * contribution — drivers score ~50/race, principals ~25-30, pit crews ~15-20,
- * power units ~10-15. The OTF score is normalised to 0-100 across all types
- * for visual comparison, but in raw points terms a 75-rated driver is worth
- * far more than a 75-rated PU. Tier-then-OTF prevents auto-draft from
- * "wasting" early picks on a high-rated low-tier asset when stronger drivers
- * are still on the board.
+ * Per-asset-type expected-points-per-race weighting. Reflects approximate
+ * fantasy points contribution:
+ *   - drivers     ~50 pts/race
+ *   - principals  ~25-30 pts/race
+ *   - pit crews   ~15-20 pts/race
+ *   - power units ~10-15 pts/race
+ *
+ * Used by sortCandidatesForAutoDraft to convert raw OTF rating (which is
+ * normalised 0-100 across all asset types) into an "expected value" that
+ * compares fairly across types:
+ *
+ *   expectedValue = otfRating * weight
+ *
+ * Sort by expectedValue desc and you get the genuinely best asset, regardless
+ * of type. Examples:
+ *
+ *   - 60 OTF driver  → 60.0   beats   95 OTF power unit → 23.75
+ *   - 95 OTF principal → 52.25 beats   50 OTF driver    → 50.0
+ *
+ * F6: previously this was tier-first then OTF, which meant a CPU always
+ * picked driver > principal > pitCrew > powerUnit regardless of OTF. Beta
+ * testers reported bots drafting in obvious position order rather than
+ * taking the best asset. Weighted-value sort fixes that while still
+ * respecting per-race points realism.
  */
-export const ASSET_TYPE_DRAFT_TIER: Record<string, number> = {
-  driver:    4,
-  principal: 3,
-  pitCrew:   2,
-  powerUnit: 1,
+export const ASSET_TYPE_VALUE_WEIGHT: Record<string, number> = {
+  driver:    1.0,
+  principal: 0.55,
+  pitCrew:   0.35,
+  powerUnit: 0.25,
 };
 
 /**
- * Sorts a list of asset candidates by (tier desc, otfRating desc) and returns
- * the best pick. Used by auto-pick handlers as the FALLBACK selection logic
- * when the user's queue doesn't have an applicable pick.
+ * Sorts a list of asset candidates by (expectedValue desc, otfRating desc as
+ * tiebreaker) and returns the best pick. Used by auto-pick handlers as the
+ * FALLBACK selection logic when the user's queue doesn't have an applicable
+ * pick. The roster's open-slot constraint is applied upstream — by the time
+ * candidates reach this function, they're guaranteed to match an open slot.
  */
 export function sortCandidatesForAutoDraft<T extends { assetType: string; otfRating?: number }>(
   candidates: T[],
 ): T[] {
   return [...candidates].sort((a, b) => {
-    const tierDiff = (ASSET_TYPE_DRAFT_TIER[b.assetType] ?? 0) - (ASSET_TYPE_DRAFT_TIER[a.assetType] ?? 0);
-    if (tierDiff !== 0) return tierDiff;
+    const aValue = (a.otfRating ?? 0) * (ASSET_TYPE_VALUE_WEIGHT[a.assetType] ?? 0);
+    const bValue = (b.otfRating ?? 0) * (ASSET_TYPE_VALUE_WEIGHT[b.assetType] ?? 0);
+    if (aValue !== bValue) return bValue - aValue;
+    // Tiebreaker on raw OTF (rare — only fires when expectedValue is exactly equal).
     return (b.otfRating ?? 0) - (a.otfRating ?? 0);
   });
 }
