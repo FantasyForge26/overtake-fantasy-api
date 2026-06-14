@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db';
 import { Asset, DraftSession, League, Roster } from '@/lib/models';
 import { getMobileSession } from '@/lib/mobile-auth';
 import { sendPushToUser, sendPushToUsers } from '@/lib/push';
-import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, hasOpenSlotForType, rollbackClaim } from '@/lib/pick-helpers';
+import { atomicClaimAsset, assignRosterSlot, assertAssetNotOnAnyRoster, hasOpenSlotForType, rollbackClaim, runAutoPickCascade } from '@/lib/pick-helpers';
 import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit';
 
 export async function POST(req: NextRequest) {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   const newPickIndex = pickIndex + 1;
   const newRound = Math.floor(newPickIndex / memberCount) + 1;
 
-  const updatedSession = await atomicClaimAsset({
+  let updatedSession = await atomicClaimAsset({
     sessionId: draftSession._id,
     assetId: asset._id,
     pickIndex,
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Pick failed — please retry' }, { status: 500 });
   }
 
-  // Check if draft is complete
+  // Check if draft is complete (from this single user pick)
   if (updatedSession.currentPickIndex >= updatedSession.totalPicks) {
     updatedSession.status = 'completed';
     updatedSession.completedAt = new Date();
@@ -139,13 +139,36 @@ export async function POST(req: NextRequest) {
     await updatedSession.save();
   }
 
-  const nextDrafterId =
-    updatedSession.status === 'completed'
-      ? null
-      : updatedSession.draftOrder[updatedSession.currentPickIndex]?.toString() ?? null;
+  // F5: cascade through any subsequent auto-draft users. Without this, every
+  // CPU pick waits a full pickTimeLimit clock to fire via the cron — a
+  // 10-CPU stretch took 10+ minutes. Now they fire instantly as soon as
+  // a real human picks, until the next human's turn comes up. The cron
+  // remains in place as belt-and-suspenders for edge cases (server timeout
+  // mid-cascade, mid-flight crash, etc.).
+  let cascadeNextDrafterId: string | null = updatedSession.status === 'completed'
+    ? null
+    : updatedSession.draftOrder[updatedSession.currentPickIndex]?.toString() ?? null;
+  let cascadeDraftComplete = updatedSession.status === 'completed';
 
-  // Push notifications (fire and forget)
-  if (updatedSession.status === 'completed') {
+  if (cascadeNextDrafterId && !cascadeDraftComplete) {
+    const cascade = await runAutoPickCascade(leagueId, cascadeNextDrafterId);
+    cascadeDraftComplete = cascade.draftComplete;
+    cascadeNextDrafterId = cascade.finalNextDrafterId;
+    if (cascade.lastError) {
+      // Inline cascade failed; the cron's safety-net auto-pick will resume
+      // from wherever we stopped on its next tick.
+      console.error('[draft/pick] cascade lastError:', cascade.lastError);
+    }
+  }
+
+  // Refresh updatedSession from DB so the returned shape reflects cascade picks.
+  const refreshed = await DraftSession.findById(updatedSession._id);
+  if (refreshed) updatedSession = refreshed as any;
+
+  const nextDrafterId = cascadeDraftComplete ? null : cascadeNextDrafterId;
+
+  // Push notifications based on FINAL post-cascade state.
+  if (cascadeDraftComplete) {
     const allUserIds = updatedSession.draftOrder.map((id: any) => id.toString());
     sendPushToUsers(allUserIds, 'Draft complete! 🏁', 'Your team is set. Head to your paddock.', { screen: 'home', leagueId }, 'general').catch(() => {});
   } else if (nextDrafterId) {
