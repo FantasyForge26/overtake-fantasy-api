@@ -130,7 +130,15 @@ const LeagueSchema = new Schema({
   pauseEnd:         { type: String, default: '08:00' },
   createdAt:        { type: Date, default: Date.now },
   currentRaceIndex: { type: Number, default: 0 },
+  // F8 Overtakers Mode: 'standard' leagues are the existing commissioner-led
+  // flow; 'overtakers' leagues are personal user-vs-10-CPU instant-draft
+  // leagues grouped by raceWeek for the eventual cross-user leaderboard.
+  mode:             { type: String, enum: ['standard', 'overtakers'], default: 'standard' },
+  raceWeek:         { type: Number },
 });
+
+// Compound index for the cross-user race-week leaderboard query (Phase 2).
+LeagueSchema.index({ mode: 1, raceWeek: 1 });
 
 // ---------------------------------------------------------------------------
 // Roster
